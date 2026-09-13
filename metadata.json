@@ -1,0 +1,8 @@
+{
+  "name": "Gym Labs",
+  "description": "Gym Labs — Personal Health Operating System. Centralized body, training, nutrition, sleep, recovery, and data laboratory.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
