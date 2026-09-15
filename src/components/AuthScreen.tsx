@@ -43,6 +43,8 @@ import {
   setUserVaultItem,
   generateTotpSecret,
   verifyTotpToken,
+  loginViaServer,
+  registerViaServer,
 } from "../utils/security";
 import { AuthUser, AuthSession, RegistrationFormData, UserProfile, SecuritySettings } from "../types";
 import { createInitialCleanBodyMetrics, cleanNutrition, cleanSleep } from "../data/emptyState";
@@ -107,22 +109,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     confirmPassword: "",
     pin: "",
     enableTwoFactor: false,
-    // Biometrics
-    age: 26,
+    // Biometrics (Unset until user provides real physical values)
+    age: 0,
     gender: "male",
-    heightCm: 175,
-    weightKg: 75,
-    targetWeightKg: 75,
-    bodyFatPercent: 15,
+    heightCm: 0,
+    weightKg: 0,
+    targetWeightKg: 0,
+    bodyFatPercent: 0,
     activityLevel: "MODERATE",
-    // Circumferences (Optional)
-    waistCm: 80,
-    chestCm: 100,
-    armCm: 36,
-    thighCm: 56,
+    // Circumferences (Optional - initially 0/empty)
+    waistCm: 0,
+    chestCm: 0,
+    armCm: 0,
+    thighCm: 0,
     // Nutrition & Sleep
-    dailyCalorieGoalKcal: 2350,
-    dailyWaterGoalMl: 2625,
+    dailyCalorieGoalKcal: 0,
+    dailyWaterGoalMl: 0,
     typicalBedTime: "23:00",
     typicalWakeTime: "07:00",
     // Goals
@@ -181,9 +183,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   }, [regStep, generatedRecoveryKey]);
 
-  // Automatic calculation of nutrition and water goals
+  // Automatic calculation of nutrition and water goals (strictly when real biometrics are entered)
   useEffect(() => {
     if (knowsNutritionGoals) return; // User opted to answer custom questions
+    if (!regData.weightKg || !regData.heightCm || !regData.age) return;
 
     // Mifflin-St Jeor formula
     let bmr = 10 * regData.weightKg + 6.25 * regData.heightCm - 5 * regData.age;
@@ -250,6 +253,80 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setLoginLoading(true);
 
     try {
+      // 1. Attempt authentication via multi-tier server auth API (Requirement 36)
+      const serverResult = await loginViaServer(cleanIdentifier, loginPassword);
+      if (serverResult.success && serverResult.user) {
+        let localUser = getAllUsers().find(
+          (u) =>
+            u.id === serverResult.user.id ||
+            u.email.toLowerCase() === cleanIdentifier ||
+            u.handle.toLowerCase() === cleanIdentifier
+        );
+        if (!localUser) {
+          localUser = {
+            id: serverResult.user.id,
+            handle: serverResult.user.handle,
+            name: serverResult.user.name,
+            email: serverResult.user.email,
+            passwordHash: "",
+            passwordSalt: "",
+            pinHash: "",
+            recoveryKey: "",
+            twoFactorEnabled: Boolean(serverResult.user.totpEnabled),
+            twoFactorSecret: "",
+            createdAt: serverResult.user.createdAt || new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+            profile: {
+              id: serverResult.user.id,
+              handle: serverResult.user.handle,
+              name: serverResult.user.name,
+              email: serverResult.user.email,
+              registeredAt: serverResult.user.createdAt || new Date().toISOString(),
+              age: 28,
+              gender: "male",
+              heightCm: 178,
+              initialWeightKg: 75,
+              weightKg: 75,
+              targetWeightKg: 75,
+              primaryGoal: "HYPERTROPHY",
+              activityLevel: "MODERATE",
+            },
+            securitySettings: {
+              pinHash: "",
+              hasPinSet: false,
+              isLocked: false,
+              autoLockMinutes: 15,
+              stealthMode: false,
+              stealthModeActive: false,
+              lgpdConsentAccepted: true,
+              consentTimestamp: new Date().toISOString(),
+              vaultEncryptionEnabled: true,
+              twoFactorEnabled: Boolean(serverResult.user.totpEnabled),
+            },
+          };
+          saveAllUsers([...getAllUsers(), localUser]);
+        }
+        clearFailedLoginAttempts(cleanIdentifier);
+        finalizeLoginSuccess(localUser);
+        return;
+      }
+
+      if (serverResult.totpRequired) {
+        clearFailedLoginAttempts(cleanIdentifier);
+        const matched = getAllUsers().find(
+          (u) =>
+            u.email.toLowerCase() === cleanIdentifier ||
+            u.handle.toLowerCase() === cleanIdentifier
+        );
+        if (matched) setPendingUser(matched);
+        setRequiresTwoFactor(true);
+        setLoginLoading(false);
+        return;
+      }
+
+      // 2. Fallback to offline local vault check
       const users = getAllUsers();
       const user = users.find(
         (u) =>
@@ -436,6 +513,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
 
+    if (!regData.age || !regData.heightCm || !regData.weightKg) {
+      setRegError("Preencha sua idade, altura e peso corporal real para calibrar o perfil biológico.");
+      setRegStep(2);
+      return;
+    }
+
     // Check uniqueness of email
     const users = getAllUsers();
     const existing = users.find(
@@ -510,6 +593,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       };
 
       saveAllUsers([...users, newUser]);
+
+      // Sync registration with server auth service (Requirement 36)
+      try {
+        await registerViaServer({
+          handle: autoHandle.toLowerCase().trim(),
+          name: regData.fullName.trim(),
+          email: regData.email.toLowerCase().trim(),
+          password: regData.password,
+          totpSecret: regData.enableTwoFactor ? totpSecret : undefined,
+          role: "user",
+        });
+      } catch (srvErr) {
+        console.warn("Server auth sync warning:", srvErr);
+      }
 
       // Initialize body metrics
       const initialBody = createInitialCleanBodyMetrics(
@@ -1259,7 +1356,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           min={14}
                           max={99}
                           required
-                          value={regData.age}
+                          value={regData.age || ""}
+                          placeholder="Ex: 26"
                           onChange={(e) => setRegData({ ...regData, age: Number(e.target.value) })}
                           className="w-full bg-black border border-zinc-700 text-zinc-100 text-sm px-3 py-2 outline-none"
                         />
@@ -1284,7 +1382,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           min={100}
                           max={240}
                           required
-                          value={regData.heightCm}
+                          value={regData.heightCm || ""}
+                          placeholder="Ex: 175"
                           onChange={(e) => setRegData({ ...regData, heightCm: Number(e.target.value) })}
                           className="w-full bg-black border border-zinc-700 text-zinc-100 text-sm px-3 py-2 outline-none"
                         />
@@ -1298,7 +1397,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           min={30}
                           max={300}
                           required
-                          value={regData.weightKg}
+                          value={regData.weightKg || ""}
+                          placeholder="Ex: 75.0"
                           onChange={(e) => setRegData({ ...regData, weightKg: Number(e.target.value) })}
                           className="w-full bg-black border border-zinc-700 text-white font-semibold text-sm px-3 py-2 outline-none"
                         />

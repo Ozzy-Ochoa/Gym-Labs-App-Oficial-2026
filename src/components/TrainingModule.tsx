@@ -13,6 +13,7 @@ import {
 import { RoutineBuilderModal } from "./training/RoutineBuilderModal";
 import { LiveWorkoutTracker } from "./training/LiveWorkoutTracker";
 import { TrainingAnalytics } from "./training/TrainingAnalytics";
+import { calculateHeartRateProfile, HeartRateProfile } from "../domain/heartRateEngine";
 import {
   Dumbbell,
   Play,
@@ -83,10 +84,26 @@ export const TrainingModule: React.FC<TrainingModuleProps> = ({
   // Active Live Workout State
   const [activeLiveRoutine, setActiveLiveRoutine] = useState<UserWorkoutRoutine | null>(null);
 
-  // Cardio Form State
-  const [cardioSport, setCardioSport] = useState<"Running" | "Cycling" | "Swimming" | "HIIT">("Running");
-  const [cardioKm, setCardioKm] = useState<number>(5.0);
-  const [cardioMin, setCardioMin] = useState<number>(30);
+  // Cardio Form State (Requirement 23 & 24)
+  const [cardioSport, setCardioSport] = useState<
+    "Running" | "Walking" | "Cycling" | "Rowing" | "Swimming" | "HIIT" | "Elliptical"
+  >("Running");
+  const [cardioKm, setCardioKm] = useState<string>("5.0");
+  const [cardioMin, setCardioMin] = useState<string>("30");
+  const [cardioAvgHr, setCardioAvgHr] = useState<string>("148");
+  const [cardioPeakHr, setCardioPeakHr] = useState<string>("168");
+
+  // Heart Rate Physiological Profile State
+  const [userAge, setUserAge] = useState<number>(28);
+  const [restingHr, setRestingHr] = useState<number>(55);
+  const [measuredMaxHr, setMeasuredMaxHr] = useState<string>("");
+  const [showHrLab, setShowHrLab] = useState<boolean>(false);
+
+  const hrProfile: HeartRateProfile | null = calculateHeartRateProfile({
+    age: userAge,
+    hrRestMeasured: restingHr,
+    hrMaxMeasured: measuredMaxHr ? Number(measuredMaxHr) : undefined,
+  });
 
   // Persistence
   useEffect(() => {
@@ -175,38 +192,57 @@ export const TrainingModule: React.FC<TrainingModuleProps> = ({
     setActiveLiveRoutine(null);
   };
 
-  // Cardio Logger
+  // Cardio Logger (Requirement 23 & 24)
   const handleLogCardioSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onAddCardio || cardioKm <= 0 || cardioMin <= 0) return;
+    const dist = parseFloat(cardioKm);
+    const durMin = parseInt(cardioMin);
+    if (!onAddCardio || !dist || dist <= 0 || !durMin || durMin <= 0) return;
 
-    const paceMin = cardioMin / cardioKm;
+    const paceMin = durMin / dist;
     const pMinutes = Math.floor(paceMin);
     const pSeconds = Math.round((paceMin - pMinutes) * 60);
     const avgPaceStr = `${pMinutes}:${pSeconds.toString().padStart(2, "0")}`;
+
+    // Standard metabolic equivalents (METs) per sport
+    const sportMetMap: Record<string, number> = {
+      Running: 9.8,
+      Walking: 3.8,
+      Cycling: 7.5,
+      Rowing: 7.0,
+      Swimming: 8.0,
+      HIIT: 8.5,
+      Elliptical: 6.5,
+    };
+    const met = sportMetMap[cardioSport] || 7.0;
+    // Compendium of Physical Activities formula: kcal = (MET × 3.5 × weightKg / 200) × minutes
+    const caloriesEst = Math.round((met * 3.5 * userWeightKg / 200) * durMin);
+
+    const avgHrVal = cardioAvgHr ? Number(cardioAvgHr) : undefined;
+    const peakHrVal = cardioPeakHr ? Number(cardioPeakHr) : undefined;
 
     const session: CardioSession = {
       id: `cardio_${Date.now()}`,
       sport: cardioSport,
       date: new Date().toISOString().split("T")[0],
-      durationMinutes: cardioMin,
-      distanceKm: cardioKm,
-      avgHeartRate: 145,
+      durationMinutes: durMin,
+      distanceKm: dist,
+      avgHeartRate: avgHrVal || 0,
+      maxHeartRate: peakHrVal,
       avgPace: avgPaceStr,
-      cadence: 160,
-      elevationMeters: 20,
-      caloriesBurned: Math.round(cardioKm * 65),
+      caloriesBurned: caloriesEst,
+      cadence: 0,
+      elevationMeters: 0,
       hrZones: {
-        zone1: 15,
-        zone2: 55,
-        zone3: 20,
-        zone4: 10,
+        zone1: 0,
+        zone2: 0,
+        zone3: 0,
+        zone4: 0,
         zone5: 0,
       },
     };
 
     onAddCardio(session);
-    alert(`Sessão aeróbica registrada: ${cardioSport} (${cardioKm}km em ${cardioMin}min)`);
   };
 
   // If live workout is currently ongoing, render the LiveWorkoutTracker interface exclusively
@@ -522,32 +558,45 @@ export const TrainingModule: React.FC<TrainingModuleProps> = ({
       {/* TAB 2: PERFORMANCE & EFFORT ANALYTICS */}
       {activeTab === "analytics" && <TrainingAnalytics workouts={workouts} />}
 
-      {/* TAB 3: CARDIO LAB */}
+      {/* TAB 3: CARDIO & HEART RATE LAB (Requirements 23 & 24) */}
       {activeTab === "cardio" && (
         <div className="space-y-6 animate-fadeIn">
           {/* Quick Cardio Session Logger */}
           <div className="border border-zinc-800 bg-black p-4 sm:p-6 space-y-4">
-            <div className="border-b border-zinc-800 pb-3">
-              <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest block">
-                TELEMETRIA AERÓBICA & CONDICIONAMENTO
-              </span>
-              <h3 className="text-base font-hud font-bold text-white tracking-wider">
-                REGISTRAR SESSÃO DE CARDIO
-              </h3>
+            <div className="border-b border-zinc-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest block">
+                  TELEMETRIA AERÓBICA & CONDICIONAMENTO // METABOLISMO OXIDATIVO
+                </span>
+                <h3 className="text-base font-hud font-bold text-white tracking-wider">
+                  REGISTRAR SESSÃO AERÓBICA
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHrLab(!showHrLab)}
+                className="text-xs font-mono px-3 py-1.5 border border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white flex items-center gap-1.5"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>{showHrLab ? "Ocultar Laboratório de FC" : "Laboratório de FC & Zonas Z1-Z5"}</span>
+              </button>
             </div>
 
-            <form onSubmit={handleLogCardioSubmit} className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="space-y-1">
+            <form onSubmit={handleLogCardioSubmit} className="grid grid-cols-1 sm:grid-cols-6 gap-3">
+              <div className="space-y-1 sm:col-span-2">
                 <label className="text-[10px] font-mono text-zinc-400 uppercase">Modalidade</label>
                 <select
                   value={cardioSport}
                   onChange={(e) => setCardioSport(e.target.value as any)}
-                  className="w-full bg-zinc-900 border border-zinc-700 text-white px-3 py-2 text-xs font-mono"
+                  className="w-full bg-zinc-900 border border-zinc-700 text-white px-3 py-2 text-xs font-mono outline-none"
                 >
                   <option value="Running">Corrida (Running)</option>
+                  <option value="Walking">Caminhada (Walking)</option>
                   <option value="Cycling">Ciclismo (Cycling)</option>
+                  <option value="Rowing">Remo (Rowing Ergometer)</option>
                   <option value="Swimming">Natação (Swimming)</option>
-                  <option value="HIIT">HIIT / Circuitos</option>
+                  <option value="HIIT">HIIT / Treino Intervalado</option>
+                  <option value="Elliptical">Elíptico (Elliptical)</option>
                 </select>
               </div>
 
@@ -558,35 +607,141 @@ export const TrainingModule: React.FC<TrainingModuleProps> = ({
                   step="0.1"
                   min="0.1"
                   value={cardioKm}
-                  onChange={(e) => setCardioKm(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-zinc-900 border border-zinc-700 text-white px-3 py-2 text-xs font-mono"
+                  onChange={(e) => setCardioKm(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 text-white px-3 py-2 text-xs font-mono outline-none"
                   required
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-zinc-400 uppercase">Duração (Minutos)</label>
+                <label className="text-[10px] font-mono text-zinc-400 uppercase">Duração (Min)</label>
                 <input
                   type="number"
                   min="1"
                   value={cardioMin}
-                  onChange={(e) => setCardioMin(parseInt(e.target.value) || 0)}
-                  className="w-full bg-zinc-900 border border-zinc-700 text-white px-3 py-2 text-xs font-mono"
+                  onChange={(e) => setCardioMin(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 text-white px-3 py-2 text-xs font-mono outline-none"
                   required
                 />
               </div>
 
-              <div className="flex items-end">
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-zinc-400 uppercase">FC Média (bpm)</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 148"
+                  value={cardioAvgHr}
+                  onChange={(e) => setCardioAvgHr(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 text-white px-3 py-2 text-xs font-mono outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-zinc-400 uppercase">FC Pico (bpm)</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 172"
+                  value={cardioPeakHr}
+                  onChange={(e) => setCardioPeakHr(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 text-white px-3 py-2 text-xs font-mono outline-none"
+                />
+              </div>
+
+              <div className="sm:col-span-6 flex justify-end pt-2">
                 <button
                   type="submit"
-                  className="w-full py-2 bg-white text-black hover:bg-zinc-200 font-hud font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
+                  className="px-6 py-2 bg-white text-black hover:bg-zinc-200 font-hud font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all shadow-md"
                 >
                   <Activity className="w-3.5 h-3.5" />
-                  <span>REGISTRAR CARDIO</span>
+                  <span>REGISTRAR SESSÃO AERÓBICA</span>
                 </button>
               </div>
             </form>
           </div>
+
+          {/* Heart Rate Physiological Zones Panel (Requirement 24) */}
+          {showHrLab && (
+            <div className="border border-zinc-800 bg-[#080808] p-5 space-y-4 font-mono text-xs animate-fadeIn">
+              <div className="border-b border-zinc-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest block">
+                    PHYSIOLOGY LAB // TANAKA VS TESTE DE ESFORÇO & ZONAS KARVONEN
+                  </span>
+                  <h4 className="text-sm font-hud font-bold text-white tracking-wider">
+                    CALCULADORA DE ZONAS DE TREINAMENTO CARDIOVASCULAR (Z1 A Z5)
+                  </h4>
+                </div>
+                {hrProfile && (
+                  <span className="text-[10px] px-2 py-0.5 bg-zinc-900 text-zinc-400 border border-zinc-800">
+                    {hrProfile.hrMaxProvenance === "MEASURED_CPET" ? "FC MÁX: MEDIDA (CPET)" : "FC MÁX: TANAKA (ESTIMADA)"}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-black p-3 border border-zinc-800">
+                <div>
+                  <label className="text-[10px] text-zinc-400 block mb-1 uppercase">Idade do Usuário</label>
+                  <input
+                    type="number"
+                    min="10"
+                    max="100"
+                    value={userAge}
+                    onChange={(e) => setUserAge(Number(e.target.value) || 28)}
+                    className="w-full bg-zinc-900 border border-zinc-800 p-2 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-zinc-400 block mb-1 uppercase">FC de Repouso Basal (bpm)</label>
+                  <input
+                    type="number"
+                    min="35"
+                    max="100"
+                    value={restingHr}
+                    onChange={(e) => setRestingHr(Number(e.target.value) || 55)}
+                    className="w-full bg-zinc-900 border border-zinc-800 p-2 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-zinc-400 block mb-1 uppercase">FC Máxima Medida em Teste (opcional)</label>
+                  <input
+                    type="number"
+                    placeholder={`Tanaka estima: ${208 - Math.round(0.7 * userAge)} bpm`}
+                    value={measuredMaxHr}
+                    onChange={(e) => setMeasuredMaxHr(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 p-2 text-white outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Zones cards */}
+              {hrProfile && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                    {hrProfile.zones.map((zone) => (
+                      <div key={zone.zoneNumber} className="border border-zinc-800 bg-black p-3 space-y-1">
+                        <span className="text-[10px] font-bold text-white block uppercase">
+                          Z{zone.zoneNumber}: {zone.zoneName}
+                        </span>
+                        <span className="text-sm font-hud font-bold text-white block">
+                          {zone.minBpm} - {zone.maxBpm} <span className="text-[9px] text-zinc-500 font-mono">BPM</span>
+                        </span>
+                        <span className="text-[9px] text-zinc-400 block">
+                          {zone.intensityPercentRange} FC Máx
+                        </span>
+                        <p className="text-[9px] text-zinc-500 pt-1 leading-tight">
+                          {zone.physiologicalFocus}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-[10px] text-zinc-500 italic">
+                    Nota Científica: {hrProfile.disclaimer}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Cardio History List */}
           <div className="border border-zinc-800 bg-black p-4 sm:p-6 space-y-4">
@@ -621,7 +776,10 @@ export const TrainingModule: React.FC<TrainingModuleProps> = ({
 
                     <div className="text-right">
                       <span className="text-white font-bold block">{session.caloriesBurned} kcal</span>
-                      <span className="text-[10px] text-zinc-500">FC Média: {session.avgHeartRate} bpm</span>
+                      <span className="text-[10px] text-zinc-500">
+                        {session.avgHeartRate ? `FC Média: ${session.avgHeartRate} bpm` : "FC Média: N/D"}
+                        {session.peakHeartRate ? ` • Pico: ${session.peakHeartRate} bpm` : ""}
+                      </span>
                     </div>
                   </div>
                 ))}

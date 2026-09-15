@@ -123,9 +123,9 @@ export default function App() {
         auth.id,
         "body_metrics",
         createInitialCleanBodyMetrics(
-          auth.profile.weightKg || 70,
-          auth.profile.heightCm || 175,
-          auth.profile.age || 28,
+          auth.profile.weightKg || 0,
+          auth.profile.heightCm || 0,
+          auth.profile.age || 0,
           auth.profile.gender || "male"
         )
       );
@@ -134,9 +134,9 @@ export default function App() {
     if (saved) return JSON.parse(saved);
     const profile = getUserProfile();
     return createInitialCleanBodyMetrics(
-      profile?.weightKg || 70,
-      profile?.heightCm || 175,
-      profile?.age || 28,
+      profile?.weightKg || 0,
+      profile?.heightCm || 0,
+      profile?.age || 0,
       profile?.gender || "male"
     );
   });

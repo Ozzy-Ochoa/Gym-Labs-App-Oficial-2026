@@ -22,10 +22,10 @@ export const UserOnboardingModal: React.FC<UserOnboardingModalProps> = ({
 
   // Step 2: Biological Baseline (Clean slate - user defines their actual metrics)
   const [handle, setHandle] = useState("");
-  const [age, setAge] = useState<number>(28);
+  const [age, setAge] = useState<number | "">("");
   const [gender, setGender] = useState<"male" | "female">("male");
-  const [heightCm, setHeightCm] = useState<number>(175);
-  const [initialWeightKg, setInitialWeightKg] = useState<number>(75);
+  const [heightCm, setHeightCm] = useState<number | "">("");
+  const [initialWeightKg, setInitialWeightKg] = useState<number | "">("");
   const [primaryGoal, setPrimaryGoal] = useState<UserProfile["primaryGoal"]>("HEALTH_LONGEVITY");
 
   if (!isOpen) return null;
@@ -48,6 +48,12 @@ export const UserOnboardingModal: React.FC<UserOnboardingModalProps> = ({
   };
 
   const handleFinish = async () => {
+    setPinError("");
+    if (!age || !heightCm || !initialWeightKg) {
+      setPinError("Informe sua idade, altura e peso inicial real para calibrar seu perfil.");
+      return;
+    }
+
     const pinHash = await hashPin(pin);
     const sanitizedHandle = sanitizeInput(handle) || "OPERADOR_01";
 
@@ -55,10 +61,12 @@ export const UserOnboardingModal: React.FC<UserOnboardingModalProps> = ({
       id: "usr_" + Math.random().toString(36).substring(2, 9),
       handle: sanitizedHandle,
       registeredAt: new Date().toISOString(),
-      age: Number(age) || 28,
+      age: Number(age),
       gender,
-      heightCm: Number(heightCm) || 175,
-      initialWeightKg: Number(initialWeightKg) || 75,
+      heightCm: Number(heightCm),
+      initialWeightKg: Number(initialWeightKg),
+      weightKg: Number(initialWeightKg),
+      targetWeightKg: Number(initialWeightKg),
       primaryGoal,
       activityLevel: "MODERATE",
     };
@@ -230,7 +238,8 @@ export const UserOnboardingModal: React.FC<UserOnboardingModalProps> = ({
                     min={14}
                     max={100}
                     value={age}
-                    onChange={(e) => setAge(Number(e.target.value))}
+                    placeholder="Ex: 26"
+                    onChange={(e) => setAge(e.target.value === "" ? "" : Number(e.target.value))}
                     className="w-full bg-black border border-zinc-800 focus:border-emerald-400 p-2 text-xs font-mono text-white outline-none"
                   />
                 </div>
@@ -242,7 +251,8 @@ export const UserOnboardingModal: React.FC<UserOnboardingModalProps> = ({
                     min={120}
                     max={230}
                     value={heightCm}
-                    onChange={(e) => setHeightCm(Number(e.target.value))}
+                    placeholder="Ex: 175"
+                    onChange={(e) => setHeightCm(e.target.value === "" ? "" : Number(e.target.value))}
                     className="w-full bg-black border border-zinc-800 focus:border-emerald-400 p-2 text-xs font-mono text-white outline-none"
                   />
                 </div>
@@ -255,7 +265,8 @@ export const UserOnboardingModal: React.FC<UserOnboardingModalProps> = ({
                     min={35}
                     max={250}
                     value={initialWeightKg}
-                    onChange={(e) => setInitialWeightKg(Number(e.target.value))}
+                    placeholder="Ex: 75.0"
+                    onChange={(e) => setInitialWeightKg(e.target.value === "" ? "" : Number(e.target.value))}
                     className="w-full bg-black border border-zinc-800 focus:border-emerald-400 p-2 text-sm font-mono text-white outline-none"
                   />
                 </div>

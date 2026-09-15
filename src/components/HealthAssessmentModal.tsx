@@ -66,31 +66,28 @@ export const HealthAssessmentModal: React.FC<HealthAssessmentModalProps> = ({
   );
 
   const handleConfirmAndApply = () => {
-    // Generate workout sessions from templates
+    // Generate workout routines as planned workouts for the user to execute (HONEST DATA)
     const sessions: WorkoutSession[] = matchedTemplates.map((template, idx) => ({
-      id: `w_suggested_${Date.now()}_${idx}`,
+      id: `w_plan_${Date.now()}_${idx}`,
       name: template.name,
       category: template.category,
-      status: "completed",
-      date: new Date(Date.now() - idx * 86400000).toISOString().split("T")[0],
+      status: "planned",
+      date: new Date(Date.now() + idx * 86400000).toISOString().split("T")[0],
       durationMinutes: template.estimatedMinutes,
-      totalVolumeKg: template.exercises.reduce(
-        (sum, ex) => sum + ex.sets * 10 * (ex.suggestedWeightKg || 20),
-        0
-      ),
-      avgRpe: 8,
+      totalVolumeKg: 0,
+      avgRpe: 0,
       exercises: template.exercises.map((ex, exIdx) => ({
         id: `ex_${Date.now()}_${exIdx}`,
         name: ex.name,
         muscleGroup: ex.muscleGroup,
         equipment: ex.equipment,
-        personalRecordKg: ex.suggestedWeightKg || 20,
+        personalRecordKg: 0,
         sets: Array.from({ length: ex.sets }).map((_, sIdx) => ({
           setNumber: sIdx + 1,
           reps: 10,
-          weightKg: ex.suggestedWeightKg || 20,
+          weightKg: ex.suggestedWeightKg || 0,
           rpe: 8,
-          completed: true,
+          completed: false,
         })),
       })),
     }));

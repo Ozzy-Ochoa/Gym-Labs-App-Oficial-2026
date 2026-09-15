@@ -1,0 +1,120 @@
+// GL DEMO FIXTURES // LABCORE TEST DATA
+// ISOLATED DEMO DATA: Used strictly for simulated presentations or testing.
+// NEVER loaded silently into real user accounts.
+// Provenance: DEMO
+
+import {
+  BodyMetrics,
+  CardioSession,
+  DataCorrelation,
+  GoalItem,
+  HabitItem,
+  HealthRecord,
+  NutritionLog,
+  SleepMetrics,
+  SystemStatusScores,
+  WorkoutSession,
+} from "../types";
+
+export const DEMO_PROVENANCE_TAG = "DEMO" as const;
+
+export const demoSystemStatus: SystemStatusScores = {
+  overall: 84,
+  training: 86,
+  nutrition: 78,
+  sleep: 91,
+  recovery: 82,
+  activity: 73,
+  consistency: 89,
+};
+
+export const demoBodyMetrics: BodyMetrics = {
+  weightKg: 78.2,
+  heightCm: 180,
+  age: 29,
+  gender: "male",
+  bodyFatPercent: 14.1,
+  leanMassKg: 67.2,
+  muscleMassKg: 64.8,
+  visceralFat: 4,
+  evolution: [
+    { period: "JAN", date: "2026-01-15", weightKg: 81.4, bodyFatPercent: 16.8, muscleMassKg: 64.4, waistCm: 84.5, chestCm: 102.0, armCm: 37.0 },
+    { period: "APR", date: "2026-04-12", weightKg: 80.1, bodyFatPercent: 15.6, muscleMassKg: 64.6, waistCm: 83.0, chestCm: 103.0, armCm: 37.8 },
+    { period: "JUL", date: "2026-07-20", weightKg: 79.0, bodyFatPercent: 14.8, muscleMassKg: 64.7, waistCm: 81.5, chestCm: 104.0, armCm: 38.2 },
+    { period: "SEP", date: "2026-09-10", weightKg: 78.2, bodyFatPercent: 14.1, muscleMassKg: 64.8, waistCm: 80.0, chestCm: 104.5, armCm: 38.5 },
+  ],
+  regions: {
+    abdomen: {
+      id: "abdomen",
+      name: "Abdômen",
+      currentCm: 82.0,
+      janCm: 86.5,
+      aprCm: 85.0,
+      julCm: 83.2,
+      sepCm: 82.0,
+      trend: "decreasing",
+      delta: "-4.5 cm",
+      lastMeasured: "08/09/2026",
+    },
+    chest: {
+      id: "chest",
+      name: "Peitoral",
+      currentCm: 104.5,
+      janCm: 102.0,
+      aprCm: 103.0,
+      julCm: 104.0,
+      sepCm: 104.5,
+      trend: "increasing",
+      delta: "+2.5 cm",
+      lastMeasured: "08/09/2026",
+    },
+    arm_right: {
+      id: "arm_right",
+      name: "Braço Direito",
+      currentCm: 38.5,
+      janCm: 37.0,
+      aprCm: 37.8,
+      julCm: 38.2,
+      sepCm: 38.5,
+      trend: "increasing",
+      delta: "+1.5 cm",
+      lastMeasured: "08/09/2026",
+    },
+    arm_left: {
+      id: "arm_left",
+      name: "Braço Esquerdo",
+      currentCm: 38.2,
+      janCm: 36.8,
+      aprCm: 37.5,
+      julCm: 38.0,
+      sepCm: 38.2,
+      trend: "increasing",
+      delta: "+1.4 cm",
+      lastMeasured: "08/09/2026",
+    },
+    shoulders: {
+      id: "shoulders",
+      name: "Ombros (Deltoides)",
+      currentCm: 122.0,
+      janCm: 119.5,
+      aprCm: 120.5,
+      julCm: 121.5,
+      sepCm: 122.0,
+      trend: "increasing",
+      delta: "+2.5 cm",
+      lastMeasured: "08/09/2026",
+    },
+    thigh_right: {
+      id: "thigh_right",
+      name: "Coxa Direita",
+      currentCm: 61.0,
+      janCm: 59.5,
+      aprCm: 60.0,
+      julCm: 60.5,
+      sepCm: 61.0,
+      trend: "increasing",
+      delta: "+1.5 cm",
+      lastMeasured: "08/09/2026",
+    },
+  },
+};

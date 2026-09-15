@@ -68,14 +68,14 @@ export const UserSettingsView: React.FC<UserSettingsViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<"profile" | "dashboard" | "preferences">("profile");
 
-  // Profile Form State
-  const [name, setName] = useState(userProfile.name || "Atleta");
-  const [handle, setHandle] = useState(userProfile.handle || "operador");
-  const [age, setAge] = useState(userProfile.age || 26);
+  // Profile Form State (Honest values without hardcoded 75/175/26 fallbacks)
+  const [name, setName] = useState(userProfile.name || "");
+  const [handle, setHandle] = useState(userProfile.handle || "");
+  const [age, setAge] = useState<number | "">(userProfile.age || "");
   const [gender, setGender] = useState<"male" | "female">(userProfile.gender || "male");
-  const [heightCm, setHeightCm] = useState(userProfile.heightCm || 175);
-  const [weightKg, setWeightKg] = useState(bodyMetrics.weightKg || userProfile.weightKg || 75);
-  const [targetWeightKg, setTargetWeightKg] = useState(userProfile.targetWeightKg || 75);
+  const [heightCm, setHeightCm] = useState<number | "">(userProfile.heightCm || "");
+  const [weightKg, setWeightKg] = useState<number | "">(bodyMetrics.weightKg || userProfile.weightKg || "");
+  const [targetWeightKg, setTargetWeightKg] = useState<number | "">(userProfile.targetWeightKg || "");
   const [primaryGoal, setPrimaryGoal] = useState<UserProfile["primaryGoal"]>(
     userProfile.primaryGoal || "HYPERTROPHY"
   );
@@ -93,22 +93,22 @@ export const UserSettingsView: React.FC<UserSettingsViewProps> = ({
     e.preventDefault();
     const updatedProfile: UserProfile = {
       ...userProfile,
-      name,
-      handle,
-      age: Number(age) || 26,
+      name: name.trim() || userProfile.name,
+      handle: handle.trim() || userProfile.handle,
+      age: age !== "" ? Number(age) : userProfile.age,
       gender,
-      heightCm: Number(heightCm) || 175,
-      weightKg: Number(weightKg) || 75,
-      targetWeightKg: Number(targetWeightKg) || 75,
+      heightCm: heightCm !== "" ? Number(heightCm) : userProfile.heightCm,
+      weightKg: weightKg !== "" ? Number(weightKg) : userProfile.weightKg,
+      targetWeightKg: targetWeightKg !== "" ? Number(targetWeightKg) : userProfile.targetWeightKg,
       primaryGoal,
       activityLevel,
     };
 
     const updatedBodyMetrics: BodyMetrics = {
       ...bodyMetrics,
-      weightKg: Number(weightKg) || 75,
-      heightCm: Number(heightCm) || 175,
-      age: Number(age) || 26,
+      weightKg: weightKg !== "" ? Number(weightKg) : bodyMetrics.weightKg,
+      heightCm: heightCm !== "" ? Number(heightCm) : bodyMetrics.heightCm,
+      age: age !== "" ? Number(age) : bodyMetrics.age,
       gender,
     };
 
@@ -259,9 +259,9 @@ export const UserSettingsView: React.FC<UserSettingsViewProps> = ({
                   min="12"
                   max="100"
                   value={age}
-                  onChange={(e) => setAge(Number(e.target.value))}
+                  placeholder="Ex: 26"
+                  onChange={(e) => setAge(e.target.value === "" ? "" : Number(e.target.value))}
                   className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-white focus:border-white focus:outline-none"
-                  required
                 />
               </div>
 
@@ -273,9 +273,9 @@ export const UserSettingsView: React.FC<UserSettingsViewProps> = ({
                   min="100"
                   max="250"
                   value={heightCm}
-                  onChange={(e) => setHeightCm(Number(e.target.value))}
+                  placeholder="Ex: 175"
+                  onChange={(e) => setHeightCm(e.target.value === "" ? "" : Number(e.target.value))}
                   className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-white focus:border-white focus:outline-none"
-                  required
                 />
               </div>
 
@@ -288,9 +288,9 @@ export const UserSettingsView: React.FC<UserSettingsViewProps> = ({
                   min="30"
                   max="250"
                   value={weightKg}
-                  onChange={(e) => setWeightKg(Number(e.target.value))}
+                  placeholder="Ex: 75.0"
+                  onChange={(e) => setWeightKg(e.target.value === "" ? "" : Number(e.target.value))}
                   className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-white focus:border-white focus:outline-none"
-                  required
                 />
               </div>
 
@@ -303,9 +303,9 @@ export const UserSettingsView: React.FC<UserSettingsViewProps> = ({
                   min="30"
                   max="250"
                   value={targetWeightKg}
-                  onChange={(e) => setTargetWeightKg(Number(e.target.value))}
+                  placeholder="Ex: 72.0"
+                  onChange={(e) => setTargetWeightKg(e.target.value === "" ? "" : Number(e.target.value))}
                   className="w-full bg-zinc-950 border border-zinc-700 px-3 py-2 text-white focus:border-white focus:outline-none"
-                  required
                 />
               </div>
 

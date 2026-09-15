@@ -1,8 +1,19 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import {
+  authenticateUser,
+  registerUser,
+  validateSession,
+  revokeSession,
+  refreshSession,
+} from "./server/authService";
+import {
+  buildAIContext,
+  generateDeterministicResponse,
+} from "./src/domain/aiContextBuilder";
 
 dotenv.config();
 
@@ -10,6 +21,14 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Security Headers Middleware
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  next();
+});
 
 // Lazy-initialized Gemini client
 function getGeminiClient(): GoogleGenAI | null {
@@ -27,91 +46,226 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
-// Health check endpoint
+// -------------------------------------------------------------------
+// 1. HEALTH & AUDIT
+// -------------------------------------------------------------------
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     system: "GL — GYM LABS // LABCORE",
-    version: "1.0.0",
+    version: "2.0.0",
+    architecture: "Multi-Tier Server Auth & Deterministic Scientific Engine",
     timestamp: new Date().toISOString(),
   });
 });
 
-// GL INTELLIGENCE AI Endpoint
+// -------------------------------------------------------------------
+// 2. PRODUCTION AUTH SERVICE API (Requirement 36)
+// -------------------------------------------------------------------
+
+// POST /api/auth/register
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { handle, name, email, password, totpSecret, role } = req.body;
+    if (!handle || !password) {
+      return res.status(400).json({ error: "Usuário e senha são obrigatórios." });
+    }
+
+    const result = await registerUser({
+      handle,
+      name: name || handle,
+      email: email || `${handle}@gymlabs.local`,
+      password,
+      totpSecret,
+      role,
+    });
+
+    return res.status(201).json({
+      success: true,
+      user: result.user,
+      token: result.token,
+      message: "Operador registrado com sucesso no enclave de segurança.",
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || "Erro no registro de usuário." });
+  }
+});
+
+// POST /api/auth/login (with brute-force protection and rate-limiting)
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { handleOrEmail, password, totpCode, clientNonce, deviceInfo } = req.body;
+    const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+
+    if (!handleOrEmail || !password) {
+      return res.status(400).json({ error: "Identificador e senha são obrigatórios." });
+    }
+
+    const result = await authenticateUser({
+      handleOrEmail,
+      password,
+      totpCode,
+      clientNonce,
+      deviceInfo: deviceInfo || req.headers["user-agent"] || "Terminal Desktop",
+      ip,
+    });
+
+    return res.json({
+      success: true,
+      user: result.user,
+      token: result.token,
+      expiresAt: result.session.expiresAt,
+      nonce: result.session.nonce,
+    });
+  } catch (err: any) {
+    const status = err.message === "TOTP_REQUIRED" ? 403 : 401;
+    return res.status(status).json({
+      error: err.message || "Falha na autenticação.",
+      totpRequired: err.message === "TOTP_REQUIRED",
+    });
+  }
+});
+
+// GET /api/auth/session (Validates token and returns session user)
+app.get("/api/auth/session", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Token de sessão ausente." });
+  }
+
+  const token = authHeader.substring(7);
+  const validated = validateSession(token);
+
+  if (!validated) {
+    return res.status(401).json({ error: "Sessão expirada ou revogada." });
+  }
+
+  return res.json({
+    authenticated: true,
+    user: validated.user,
+    session: {
+      expiresAt: validated.session.expiresAt,
+      lastActiveAt: validated.session.lastActiveAt,
+      deviceInfo: validated.session.deviceInfo,
+    },
+  });
+});
+
+// POST /api/auth/refresh (Session extension)
+app.post("/api/auth/refresh", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Token ausente." });
+  }
+
+  const token = authHeader.substring(7);
+  const newSession = refreshSession(token);
+
+  if (!newSession) {
+    return res.status(401).json({ error: "Impossível renovar sessão expirada." });
+  }
+
+  return res.json({
+    success: true,
+    token: newSession.token,
+    expiresAt: newSession.expiresAt,
+  });
+});
+
+// POST /api/auth/logout (Revocation)
+app.post("/api/auth/logout", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    revokeSession(token);
+  }
+  return res.json({ success: true, message: "Sessão revogada com sucesso." });
+});
+
+// -------------------------------------------------------------------
+// 3. GL INTELLIGENCE PIPELINE (Requirements 30, 31, 32, 33, 34, 35)
+// -------------------------------------------------------------------
 app.post("/api/intelligence", async (req, res) => {
   try {
     const { query, telemetry } = req.body;
-    if (!query) {
+    if (!query || typeof query !== "string") {
       return res.status(400).json({ error: "Query is required" });
     }
 
+    // Step 1: Execute scientific context pipeline (Minimal context & Anti-hallucination precomputations)
+    const structuredPayload = buildAIContext(query, telemetry);
+
     const ai = getGeminiClient();
 
-    // If Gemini client is configured with active API Key:
+    // If Gemini client is active with valid API key
     if (ai) {
       try {
-        const prompt = `User Query: "${query}"\n\nUser Health & Performance Telemetry (GL Data Core):\n${JSON.stringify(
-          telemetry,
-          null,
-          2
-        )}\n\nProvide an objective, scientific laboratory assessment. Address the question directly based on their metrics. State clear metrics, observable patterns, and actionable adjustments. Remember: correlation is not causation.`;
+        const minimalPrompt = `USER INQUIRY: "${query}"
+
+DETECTED INTENT: ${structuredPayload.intent} (${structuredPayload.intentDescription})
+
+PRECOMPUTED SCIENTIFIC METRICS (Validated by GL Scientific Engine):
+${JSON.stringify(structuredPayload.precomputedMetrics, null, 2)}
+
+ACADEMIC CITATIONS & STANDARDS (Validated by GL Evidence Engine):
+${JSON.stringify(structuredPayload.academicEvidence, null, 2)}
+
+DATA COMPLETENESS & LIMITATIONS:
+${
+  structuredPayload.missingDataNotes.length > 0
+    ? structuredPayload.missingDataNotes.map((n) => `• ${n}`).join("\n")
+    : "Biometria e telemetria completas para os parâmetros analisados."
+}
+
+MINIMAL ANONYMIZED CONTEXT:
+${JSON.stringify(structuredPayload.minimalContext, null, 2)}
+
+INSTRUCTIONS FOR SYNTHESIS:
+1. Base your answer STRICTLY on the precalculated metrics and scientific evidence provided above.
+2. DO NOT invent unmeasured numbers, studies, or clinical diagnoses.
+3. If data is insufficient or missing, state so directly and objectively.
+4. Cite the provided scientific sources (e.g., ACSM, Schoenfeld, Morton, Tanaka, AASM) where appropriate.
+5. Maintain the GL // LABCORE tone: clean, objective, technical, encouraging without cheerleading clichés.`;
 
         const response = await ai.models.generateContent({
           model: "gemini-3.8-flash",
-          contents: prompt,
+          contents: minimalPrompt,
           config: {
             systemInstruction:
-              "You are GL INTELLIGENCE, the analytical AI core of GL — GYM LABS (Personal Health Operating System). Design language: GL // LABCORE. Tone: objective, technical, modern, scientific, direct. No childish cheerleader clichés. Always relate findings to specific telemetry (volume, sleep consistency, protein intake, HRV, recovery status). Point out when data is insufficient or when correlation does not imply causality.",
-            temperature: 0.3,
+              "You are GL INTELLIGENCE, the scientific analytical core of GL — GYM LABS (Personal Health Operating System). Design language: GL // LABCORE. Tone: objective, laboratory-grade, mathematically sound. Never invent numbers. Always reference the precomputed metrics and evidence engine provided.",
+            thinkingConfig: {
+              thinkingLevel: ThinkingLevel.LOW,
+            },
           },
         });
 
         return res.json({
           source: "gemini-3.8-flash",
           answer: response.text,
+          intent: structuredPayload.intent,
+          intentDescription: structuredPayload.intentDescription,
+          missingDataNotes: structuredPayload.missingDataNotes,
+          academicEvidence: structuredPayload.academicEvidence,
           timestamp: new Date().toISOString(),
         });
       } catch (geminiError: any) {
-        console.warn("Gemini API call failed, generating deterministic fallback:", geminiError?.message);
+        console.warn(
+          "Gemini API call returned error or timed out, activating high-fidelity deterministic fallback:",
+          geminiError?.message
+        );
       }
     }
 
-    // High-precision deterministic analytical engine fallback
-    // Real-data analytical engine (deterministic calculations using the incoming telemetry)
-    const qLower = (query || "").toLowerCase();
-    let answer = "";
-
-    const workouts = Array.isArray(telemetry?.workouts) ? telemetry.workouts : [];
-    const sleep = telemetry?.sleep || {};
-    const nutrition = telemetry?.nutrition || {};
-    const body = telemetry?.bodyMetrics || {};
-    const profile = telemetry?.userProfile || {};
-
-    const workoutsCount = workouts.length;
-    const totalVolume = workouts.reduce((acc: number, w: any) => acc + (Number(w.totalVolumeKg) || 0), 0);
-    const avgSleep = sleep.durationHours ? `${sleep.durationHours}h` : "Sem registros recentes";
-    const hrvVal = sleep.hrvMs ? `${sleep.hrvMs} ms` : "Não informado";
-    const recoveryScore = sleep.recoveryScore !== undefined ? `${sleep.recoveryScore}/100` : "Não calculado";
-
-    if (qLower.includes("sono") || qLower.includes("sleep") || qLower.includes("recupera")) {
-      if (!sleep.durationHours && workoutsCount === 0) {
-        answer = `**ANÁLISE DE SONO & RECUPERAÇÃO // GL LABCORE**\n\n- **Status:** Dados insuficientes de sono no período ativo.\n- **Orientação:** Registre ao menos 3 noites de sono no módulo 'SAÚDE' para permitir o cruzamento de dados com seu volume de treino.\n\n*Nota analítica:* O sistema só emite correlações após acúmulo de dados biométricos reais.`;
-      } else {
-        answer = `**ANÁLISE DE SONO & RECUPERAÇÃO // GL LABCORE**\n\n- **Duração do Último Registro:** ${avgSleep}\n- **Variabilidade da Frequência Cardíaca (HRV):** ${hrvVal}\n- **Índice de Prontidão / Recuperação:** ${recoveryScore}\n- **Sessões de Treino Registradas:** ${workoutsCount} sessões (Volume acumulado: ${totalVolume.toLocaleString("pt-BR")} kg)\n\n*Diretriz Determinística:* Sessões de alta intensidade exigem prontidão adequada. Manter consistência de horários de dormir reduz a variabilidade do SNC (Sistema Nervoso Central).`;
-      }
-    } else if (qLower.includes("peso") || qLower.includes("weight") || qLower.includes("medidas") || qLower.includes("composição") || qLower.includes("gordura")) {
-      const weight = body.weightKg || profile.weightKg || "Não registrado";
-      const fat = body.bodyFatPercent ? `${body.bodyFatPercent}%` : "Aguardando bioimpedância ou dobras";
-      answer = `**ANÁLISE DE COMPOSIÇÃO CORPORAL & ANTROPOMETRIA**\n\n- **Peso Atual Registrado:** ${weight} kg\n- **Percentual de Gordura:** ${fat}\n- **Massa Magra Estimada:** ${body.leanMassKg ? `${body.leanMassKg} kg` : "Calculado após inserção de dados"}\n\n*Recomendação Científica:* Para avaliação precisa da composição corporal, utilize medições de dobras cutâneas (Jackson-Pollock) ou DEXA. Balanças de bioimpedância simples sofrem influência de hidratação.`;
-    } else if (qLower.includes("mês") || qLower.includes("mes") || qLower.includes("treino") || qLower.includes("volume")) {
-      answer = `**RELATÓRIO DE CARGA DE TREINO (DADOS REAIS)**\n\n- **Sessões Concluídas:** ${workoutsCount} sessões\n- **Volume Total Levantado:** ${totalVolume.toLocaleString("pt-BR")} kg\n- **Média de Volume por Treino:** ${workoutsCount > 0 ? Math.round(totalVolume / workoutsCount).toLocaleString("pt-BR") : 0} kg\n- **Ingestão Hídrica Registrada:** ${nutrition.waterCurrentMl || 0} ml (Meta: ${nutrition.waterTargetMl || 3000} ml)\n\n*Conclusão Técnica:* A progressão de sobrecarga deve priorizar técnica e proximidade da falha (RIR 1-3). Evite aumentos de volume superiores a 10% semanais para prevenção de tendinopatias.`;
-    } else {
-      answer = `**DIAGNÓSTICO GL LABCORE // TELEMETRIA INTEGRADA**\n\n- **Usuário:** @${profile.handle || "operador"} (${profile.name || "Não identificado"})\n- **Sessões de Treino Ativas:** ${workoutsCount}\n- **Volume de Treinamento Acumulado:** ${totalVolume.toLocaleString("pt-BR")} kg\n- **Prontidão / Recuperação:** ${recoveryScore}\n- **Meta Calórica Diária:** ${nutrition.calorieTargetKcal || "Não definida"} kcal\n\n*Diretriz:* Faça perguntas específicas como 'Como está meu volume de treino?' ou 'Analise meu sono' para obter relatórios detalhados com base no seu histórico real.`;
-    }
+    // Step 2: High-Fidelity Deterministic Scientific Fallback (Zero Hallucination)
+    const deterministicAnswer = generateDeterministicResponse(structuredPayload);
 
     return res.json({
-      source: "gl-deterministic-core",
-      answer,
+      source: "gl-deterministic-scientific-core",
+      answer: deterministicAnswer,
+      intent: structuredPayload.intent,
+      intentDescription: structuredPayload.intentDescription,
+      missingDataNotes: structuredPayload.missingDataNotes,
+      academicEvidence: structuredPayload.academicEvidence,
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {
@@ -119,7 +273,9 @@ app.post("/api/intelligence", async (req, res) => {
   }
 });
 
-// Server boot with Vite middleware
+// -------------------------------------------------------------------
+// 4. VITE MIDDLEWARE & SERVER BOOT
+// -------------------------------------------------------------------
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

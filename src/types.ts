@@ -65,15 +65,24 @@ export interface MoodLog {
   energyLevel: number; // 1 to 10
   stressLevel: number; // 1 to 10
   mentalFocus: number; // 1 to 10
+  motivationLevel?: number; // 1 to 10
+  sorenessDoms?: number; // 1 to 10 (Muscle soreness)
+  perceivedRecovery?: number; // 1 to 10
   notes?: string;
   readinessScore?: number; // 0 to 100
+  classification?: "SELF_REPORTED / REAL";
 }
 
 export interface ExerciseSet {
   setNumber: number;
   reps: number;
   weightKg: number;
-  rpe: number; // Rate of Perceived Exertion (1-10)
+  load?: number; // Alias for weightKg
+  rir?: number; // Reps In Reserve (0 to 5)
+  rpe: number; // Rate of Perceived Exertion (1-10, Borg CR-10)
+  restSeconds?: number; // Inter-set rest period
+  distanceMeters?: number; // For endurance or sled work
+  durationSeconds?: number; // For isometric / timed sets
   completed: boolean;
   toFailure?: boolean; // Se a série foi levada até a falha muscular concêntrica
   failureRep?: number; // Repetição específica em que ocorreu a falha
@@ -128,16 +137,36 @@ export interface WorkoutSession {
   totalFailureSets?: number;
   routineScaleSlot?: string;
   caloriesBurned?: number;
+  notes?: string;
+  source?: "MANUAL" | "WEARABLE" | "PRESET";
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+export type CardioSportType =
+  | "Running"
+  | "Walking"
+  | "Cycling"
+  | "RunWalk"
+  | "Rowing"
+  | "Elliptical"
+  | "Swimming"
+  | "StairClimber"
+  | "Other";
 
 export interface CardioSession {
   id: string;
   date: string;
-  sport: "Running" | "Cycling" | "Swimming" | "HIIT";
+  sport: CardioSportType | "HIIT";
   distanceKm: number;
   durationMinutes: number;
   avgPace: string; // e.g. "4:52 /km"
+  avgSpeedKmH?: number;
   avgHeartRate: number;
+  maxHeartRate?: number;
+  heartRateType?: "MEASURED" | "ESTIMATED";
+  trainingZone?: 1 | 2 | 3 | 4 | 5;
+  rpe?: number; // 1-10
   hrZones: {
     zone1: number; // % in recovery
     zone2: number; // % in aerobic endurance
@@ -148,6 +177,10 @@ export interface CardioSession {
   cadence: number;
   elevationMeters: number;
   caloriesBurned: number;
+  notes?: string;
+  source?: "MANUAL" | "WEARABLE" | "PRESET";
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MealItem {

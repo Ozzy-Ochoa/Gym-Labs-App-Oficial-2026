@@ -567,3 +567,158 @@ export function purgeCurrentUserVault(userId: string) {
 export function purgeVaultData() {
   localStorage.clear();
 }
+
+// ----------------------------------------------------
+// MULTI-TIER SERVER AUTH INTEGRATION (Requirement 36)
+// ----------------------------------------------------
+
+export const SERVER_TOKEN_KEY = "gl_auth_server_token_v2";
+
+export function getServerAuthToken(): string | null {
+  try {
+    return localStorage.getItem(SERVER_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setServerAuthToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(SERVER_TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(SERVER_TOKEN_KEY);
+    }
+  } catch {}
+}
+
+export interface ServerAuthResponse {
+  success: boolean;
+  user?: any;
+  token?: string;
+  error?: string;
+  totpRequired?: boolean;
+}
+
+export async function loginViaServer(
+  handleOrEmail: string,
+  password: string,
+  totpCode?: string
+): Promise<ServerAuthResponse> {
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        handleOrEmail,
+        password,
+        totpCode,
+        clientNonce: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+        deviceInfo: typeof navigator !== "undefined" ? navigator.userAgent : "Web Terminal",
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data.error || "Falha na autenticação via servidor.",
+        totpRequired: data.totpRequired || false,
+      };
+    }
+
+    if (data.token) {
+      setServerAuthToken(data.token);
+    }
+
+    return {
+      success: true,
+      user: data.user,
+      token: data.token,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Erro de comunicação com o serviço de autenticação.",
+    };
+  }
+}
+
+export async function registerViaServer(params: {
+  handle: string;
+  name: string;
+  email: string;
+  password: string;
+  totpSecret?: string;
+  role?: "admin" | "operator" | "user";
+}): Promise<ServerAuthResponse> {
+  try {
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data.error || "Falha no registro via servidor.",
+      };
+    }
+
+    if (data.token) {
+      setServerAuthToken(data.token);
+    }
+
+    return {
+      success: true,
+      user: data.user,
+      token: data.token,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Erro ao contatar enclave de autenticação.",
+    };
+  }
+}
+
+export async function verifyServerSession(token?: string): Promise<{ valid: boolean; user?: any }> {
+  const activeToken = token || getServerAuthToken();
+  if (!activeToken) return { valid: false };
+
+  try {
+    const res = await fetch("/api/auth/session", {
+      headers: {
+        Authorization: `Bearer ${activeToken}`,
+      },
+    });
+
+    if (!res.ok) {
+      setServerAuthToken(null);
+      return { valid: false };
+    }
+
+    const data = await res.json();
+    return { valid: data.valid, user: data.user };
+  } catch {
+    return { valid: false };
+  }
+}
+
+export async function logoutViaServer(): Promise<void> {
+  const token = getServerAuthToken();
+  if (token) {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch {}
+  }
+  setServerAuthToken(null);
+  setActiveSession(null);
+}

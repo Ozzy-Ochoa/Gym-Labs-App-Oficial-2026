@@ -11,6 +11,9 @@ import {
   BodyMetrics,
   SystemStatusScores,
 } from "../types";
+import { calculateACWR, ACWRAnalysisResult } from "../domain/trainingLoadEngine";
+import { computeCalibratedSystemStatus } from "../domain/analyticsEngine";
+import { ProvenanceBadge } from "../domain/provenance";
 import {
   FlaskConical,
   TrendingUp,
@@ -68,7 +71,7 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
   nutrition,
   sleep,
   bodyMetrics,
-  systemStatus,
+  systemStatus: propSystemStatus,
   onToggleHabit,
   onAddHabit,
   onAddGoal,
@@ -108,64 +111,31 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
   const activeCorrelations = correlations || [];
   const activeHealthTimeline = healthTimeline || [];
 
-  // 1. Calculate ACWR (Acute to Chronic Workload Ratio)
-  // Acute = Volume of workouts in last 7 days; Chronic = Average weekly volume over 28 days
+  // 1. Calculate ACWR strictly from real data (Foster sRPE / Gabbett uncoupled)
+  // NEVER invents 8400 or 7800.
+  const acwrAnalysis: ACWRAnalysisResult = calculateACWR(workouts);
+
   const totalVolumeKg = workouts.reduce(
     (acc, w) => acc + (w.totalVolumeKg || w.exercises.reduce((exAcc, e) => exAcc + e.totalVolumeKg, 0)),
     0
   );
-  // Estimate acute vs chronic: If workouts exist, compute real or benchmarked ACWR
-  const acuteWorkload = workouts.length > 0 ? Math.round(totalVolumeKg / (workouts.length || 1)) * 3.5 : 8400;
-  const chronicWorkload = workouts.length > 0 ? Math.round(acuteWorkload * 0.92) : 7800;
-  const acwrRatio = chronicWorkload > 0 ? Number((acuteWorkload / chronicWorkload).toFixed(2)) : 1.08;
 
-  // Determine ACWR zone:
-  // < 0.8: Subtraining; 0.8 - 1.3: Sweet Spot (Optimal); 1.3 - 1.5: Elevated Risk; > 1.5: Danger Zone
-  const getAcwrStatus = (ratio: number) => {
-    if (ratio < 0.8) {
-      return {
-        label: "SUBTREINAMENTO",
-        color: "text-zinc-400 border-zinc-700 bg-zinc-900",
-        description: "Estímulo de sobrecarga abaixo do teto de adaptação muscular. Há margem segura para elevar volume.",
-      };
-    }
-    if (ratio <= 1.3) {
-      return {
-        label: "ZONA ÓTIMA // SWEET SPOT",
-        color: "text-white border-white bg-zinc-900 font-bold",
-        description: "Equilíbrio biomecânico ideal. Ganhos de força e hipertrofia maximizados com risco mínimo de lesão articular.",
-      };
-    }
-    if (ratio <= 1.5) {
-      return {
-        label: "CARGA ELEVADA // ATENÇÃO",
-        color: "text-zinc-300 border-zinc-600 bg-zinc-900",
-        description: "Volume de trabalho alto. Priorize ingestão de água, proteína e sono profundo para sustentar a recuperação.",
-      };
-    }
-    return {
-      label: "RISCO ELEVADO DE LESÃO",
-      color: "text-white border-zinc-400 bg-zinc-800 font-bold",
-      description: "Pico agudo de sobrecarga (>1.5). Recomenda-se deload imediato ou sessão regenerativa para evitar estiramentos.",
-    };
-  };
+  // 2. Calibrated System Telemetry & Pillars (No fake 78, 84, 88, 80)
+  const systemStatus =
+    propSystemStatus ||
+    computeCalibratedSystemStatus({
+      workouts,
+      nutrition,
+      sleep,
+      habits,
+      cardio: cardioSessions,
+    });
 
-  const acwrInfo = getAcwrStatus(acwrRatio);
-
-  // 2. Pillar Readiness and Balance Scores (0 - 100)
-  const trainingScore = workouts.length > 0 ? Math.min(100, Math.round(workouts.length * 22 + 25)) : 78;
-  const nutritionScore =
-    nutrition && nutrition.caloriesTarget > 0
-      ? Math.min(100, Math.round((nutrition.proteinCurrentG / nutrition.proteinTargetG) * 90) || 82)
-      : 84;
-  const sleepScore =
-    sleep && sleep.recoveryScore > 0 ? sleep.recoveryScore : 88;
-  const habitsScore =
-    habits.length > 0
-      ? Math.round((habits.filter((h) => h.completedToday).length / habits.length) * 100)
-      : 80;
-
-  const holisticScore = Math.round((trainingScore + nutritionScore + sleepScore + habitsScore) / 4);
+  const trainingScore = systemStatus.pillars.training.value;
+  const nutritionScore = systemStatus.pillars.nutrition.value;
+  const sleepScore = systemStatus.pillars.sleep.value;
+  const habitsScore = systemStatus.pillars.consistency.value;
+  const holisticScore = systemStatus.overall;
 
   // 3. Impact Simulator Calculations
   const projectedStrengthGain = (simSleepExtra * 3.2 + (simProteinExtra / 20) * 2.8 + simWaterExtra * 1.5).toFixed(1);
@@ -382,8 +352,8 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-zinc-400">ÍNDICE GERAL:</span>
-                <span className="text-base font-hud font-bold text-white bg-zinc-900 px-3 py-1 border border-zinc-700">
-                  {holisticScore}/100
+                <span className="text-base font-hud font-bold text-white bg-zinc-900 px-3 py-1 border border-zinc-700 font-mono">
+                  {holisticScore !== null ? `${holisticScore}/100` : "CALIBRANDO"}
                 </span>
               </div>
             </div>
@@ -396,13 +366,15 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
                     <Dumbbell className="w-3 h-3 text-white" />
                     TREINAMENTO
                   </span>
-                  <span className="font-hud font-bold text-white text-sm">{trainingScore}%</span>
+                  <span className="font-hud font-bold text-white text-sm">
+                    {trainingScore !== null ? `${trainingScore}%` : "N/D"}
+                  </span>
                 </div>
                 <div className="w-full bg-zinc-900 h-1.5 overflow-hidden">
-                  <div className="bg-white h-full" style={{ width: `${trainingScore}%` }} />
+                  <div className="bg-white h-full transition-all" style={{ width: `${trainingScore || 0}%` }} />
                 </div>
                 <span className="text-[10px] font-mono text-zinc-500 block">
-                  {workouts.length} sessões registradas • {stealthMode ? "••••" : `${totalVolumeKg.toLocaleString()} kg total`}
+                  {systemStatus.pillars.training.description}
                 </span>
               </div>
 
@@ -413,13 +385,15 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
                     <HeartPulse className="w-3 h-3 text-white" />
                     NUTRIÇÃO
                   </span>
-                  <span className="font-hud font-bold text-white text-sm">{nutritionScore}%</span>
+                  <span className="font-hud font-bold text-white text-sm">
+                    {nutritionScore !== null ? `${nutritionScore}%` : "N/D"}
+                  </span>
                 </div>
                 <div className="w-full bg-zinc-900 h-1.5 overflow-hidden">
-                  <div className="bg-white h-full" style={{ width: `${nutritionScore}%` }} />
+                  <div className="bg-white h-full transition-all" style={{ width: `${nutritionScore || 0}%` }} />
                 </div>
                 <span className="text-[10px] font-mono text-zinc-500 block">
-                  Aderência proteica e hídrica calculada
+                  {systemStatus.pillars.nutrition.description}
                 </span>
               </div>
 
@@ -430,13 +404,15 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
                     <Zap className="w-3 h-3 text-white" />
                     RECUPERAÇÃO / SNC
                   </span>
-                  <span className="font-hud font-bold text-white text-sm">{sleepScore}%</span>
+                  <span className="font-hud font-bold text-white text-sm">
+                    {sleepScore !== null ? `${sleepScore}%` : "N/D"}
+                  </span>
                 </div>
                 <div className="w-full bg-zinc-900 h-1.5 overflow-hidden">
-                  <div className="bg-white h-full" style={{ width: `${sleepScore}%` }} />
+                  <div className="bg-white h-full transition-all" style={{ width: `${sleepScore || 0}%` }} />
                 </div>
                 <span className="text-[10px] font-mono text-zinc-500 block">
-                  Readiness Score e HRV matinal
+                  {systemStatus.pillars.sleep.description}
                 </span>
               </div>
 
@@ -447,74 +423,117 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
                     <CheckSquare className="w-3 h-3 text-white" />
                     DISCIPLINA
                   </span>
-                  <span className="font-hud font-bold text-white text-sm">{habitsScore}%</span>
+                  <span className="font-hud font-bold text-white text-sm">
+                    {habitsScore !== null ? `${habitsScore}%` : "N/D"}
+                  </span>
                 </div>
                 <div className="w-full bg-zinc-900 h-1.5 overflow-hidden">
-                  <div className="bg-white h-full" style={{ width: `${habitsScore}%` }} />
+                  <div className="bg-white h-full transition-all" style={{ width: `${habitsScore || 0}%` }} />
                 </div>
                 <span className="text-[10px] font-mono text-zinc-500 block">
-                  {habits.filter((h) => h.completedToday).length} de {habits.length} hábitos hoje
+                  {systemStatus.pillars.consistency.description}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* ACWR Workload Gauge Card */}
+          {/* ACWR Workload Gauge Card - Refactored for Scientific Rigor */}
           <div className="border-2 border-zinc-800 bg-zinc-950 p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">
-                    MEDICINA ESPORTIVA // WHOOP & TIM GABBETT MODEL
+                    LABCORE FISIOLOGIA // FOSTER sRPE & GABBETT DESACOPLADO
                   </span>
+                  <ProvenanceBadge
+                    provenance={acwrAnalysis.isSufficientData ? "CALCULATED" : "INFERRED"}
+                    formulaId="ACWR_RATIO"
+                    compact
+                  />
                 </div>
                 <h3 className="font-hud font-bold text-white text-lg uppercase tracking-wider flex items-center gap-2">
                   <span>RELAÇÃO CARGA AGUDA : CRÔNICA (ACWR)</span>
                 </h3>
               </div>
-              <div className={`px-3 py-1 border text-xs font-hud font-bold uppercase tracking-wider ${acwrInfo.color}`}>
-                {acwrInfo.label} (r = {acwrRatio})
+              <div className={`px-3 py-1 border text-xs font-mono font-bold uppercase tracking-wider ${acwrAnalysis.colorClass}`}>
+                {acwrAnalysis.statusLabel} {acwrAnalysis.acwrRatio !== null ? `(r = ${acwrAnalysis.acwrRatio.toFixed(2)})` : ""}
               </div>
             </div>
 
-            <p className="text-xs font-mono text-zinc-300 leading-relaxed max-w-3xl">
-              O ACWR compara o volume de treinamento dos últimos 7 dias (Carga Aguda: {stealthMode ? "••••" : `${acuteWorkload.toLocaleString()} kg`}) 
-              com a média das últimas 4 semanas (Carga Crônica: {stealthMode ? "••••" : `${chronicWorkload.toLocaleString()} kg`}). 
-              Manter o índice entre <strong>0.8 e 1.3</strong> garante hipertrofia acelerada com mínimo risco de lesão musculoesquelética.
-            </p>
+            {/* If Insufficient Data: Render Honest Scientific Empty State */}
+            {!acwrAnalysis.isSufficientData ? (
+              <div className="space-y-3 py-2">
+                <div className="p-4 bg-black border border-zinc-800 space-y-2">
+                  <div className="flex items-center gap-2 text-zinc-300 text-xs font-mono font-bold uppercase">
+                    <Info className="w-4 h-4 text-zinc-400 shrink-0" />
+                    <span>DADOS INSUFICIENTES PARA CALCULAR</span>
+                  </div>
+                  <p className="text-xs font-mono text-zinc-400 leading-relaxed">
+                    {acwrAnalysis.clinicalInterpretation}
+                  </p>
+                  <div className="pt-2 border-t border-zinc-900 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] font-mono text-zinc-500">
+                    <div>
+                      Sessões válidas: <strong className="text-zinc-300">{workouts.length}</strong>
+                    </div>
+                    <div>
+                      Histórico acumulado: <strong className="text-zinc-300">{acwrAnalysis.availableDaysHistory} dias</strong>
+                    </div>
+                    <div>
+                      Mínimo requerido: <strong className="text-zinc-300">{acwrAnalysis.minDaysRequired} a 28 dias</strong>
+                    </div>
+                  </div>
+                </div>
 
-            {/* Visual ACWR Bar */}
-            <div className="space-y-1.5 pt-1">
-              <div className="relative h-4 bg-zinc-900 border border-zinc-800 w-full overflow-hidden flex">
-                <div className="w-[25%] bg-amber-900/60 border-r border-black" title="Subtreinamento (<0.8)" />
-                <div className="w-[45%] bg-emerald-700/80 border-r border-black" title="Sweet Spot (0.8 - 1.3)" />
-                <div className="w-[15%] bg-yellow-700/80 border-r border-black" title="Carga Elevada (1.3 - 1.5)" />
-                <div className="w-[15%] bg-rose-800/80" title="Risco Alto (>1.5)" />
-
-                {/* Marker for Current ACWR */}
-                <div
-                  className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_8px_#ffffff]"
-                  style={{
-                    left: `${Math.min(98, Math.max(2, (acwrRatio / 2.0) * 100))}%`,
-                  }}
-                  title={`Seu ACWR atual: ${acwrRatio}`}
-                />
+                <p className="text-[11px] font-mono text-zinc-500 leading-relaxed">
+                  * <strong>Compromisso de Honestidade Científica:</strong> O Gym Labs não insere valores artificiais de preenchimento (como 8400 ou 7800) para forçar um gráfico quando o histórico real ainda está em fase de coleta.
+                </p>
               </div>
+            ) : (
+              /* Real ACWR Data Available */
+              <div className="space-y-4">
+                <p className="text-xs font-mono text-zinc-300 leading-relaxed max-w-3xl">
+                  Carga Aguda (últimos 7 dias): <strong className="text-white">{stealthMode ? "••••" : `${acwrAnalysis.acuteWorkloadAU} UA`}</strong> • Carga Crônica Média Semanal: <strong className="text-white">{stealthMode ? "••••" : `${acwrAnalysis.chronicWeeklyWorkloadAU} UA`}</strong>.
+                </p>
 
-              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
-                <span>0.0 (Descanso)</span>
-                <span className="text-amber-400">0.8 (Início Estímulo)</span>
-                <span className="text-emerald-400 font-bold">1.0 - 1.3 (Sweet Spot)</span>
-                <span className="text-yellow-400">1.5 (Atenção)</span>
-                <span className="text-rose-400">2.0+ (Sobrecarga)</span>
+                {/* Visual ACWR Bar */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="relative h-4 bg-zinc-900 border border-zinc-800 w-full overflow-hidden flex">
+                    <div className="w-[25%] bg-zinc-800 border-r border-black" title="Carga Reduzida (<0.8)" />
+                    <div className="w-[45%] bg-zinc-700 border-r border-black" title="Progressão Estável (0.8 - 1.3)" />
+                    <div className="w-[15%] bg-zinc-600 border-r border-black" title="Carga Acima do Padrão Recente (1.3 - 1.5)" />
+                    <div className="w-[15%] bg-zinc-500" title="Pico Agudo de Sobrecarga (>1.5)" />
+
+                    {/* Marker for Current ACWR */}
+                    <div
+                      className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_8px_#ffffff]"
+                      style={{
+                        left: `${Math.min(98, Math.max(2, (((acwrAnalysis.acwrRatio || 1) / 2.0) * 100)))}%`,
+                      }}
+                      title={`Seu ACWR atual: ${acwrAnalysis.acwrRatio}`}
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                    <span>0.0 (Descanso)</span>
+                    <span>0.8 (Carga Reduzida)</span>
+                    <span className="text-zinc-300 font-bold">1.0 - 1.3 (Progressão Estável)</span>
+                    <span>1.5 (Atenção)</span>
+                    <span>2.0+ (Sobrecarga)</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-black border border-zinc-800 text-xs font-mono text-zinc-300 flex items-start gap-2.5">
+                  <Info className="w-4 h-4 text-white shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Interpretação Fisiológica:</strong> {acwrAnalysis.clinicalInterpretation}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="p-3 bg-black border border-zinc-800 text-xs font-mono text-zinc-300 flex items-start gap-2.5">
-              <Info className="w-4 h-4 text-white shrink-0 mt-0.5" />
-              <span>
-                <strong>Diagnóstico do Atleta:</strong> {acwrInfo.description}
-              </span>
+            {/* Strict Scientific Caveat Disclaimer */}
+            <div className="p-2.5 bg-zinc-900/60 border border-zinc-800/80 text-[10px] font-mono text-zinc-400">
+              <strong className="text-zinc-300">AVISO METODOLÓGICO:</strong> {acwrAnalysis.caveatDisclaimer}
             </div>
           </div>
 

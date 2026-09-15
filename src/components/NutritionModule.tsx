@@ -7,6 +7,11 @@ import {
   SavedDish,
 } from "../data/healthEngineData";
 import {
+  calculateHydrationTarget,
+  getArmstrongScale,
+  HydrationEstimateResult,
+} from "../domain/hydrationEngine";
+import {
   Droplets,
   Utensils,
   Plus,
@@ -19,6 +24,9 @@ import {
   ChevronUp,
   Clock,
   Search,
+  Thermometer,
+  Activity,
+  Info,
 } from "lucide-react";
 
 interface NutritionModuleProps {
@@ -107,6 +115,26 @@ export const NutritionModule: React.FC<NutritionModuleProps> = ({
     100,
     Math.round((nutrition.waterCurrentMl / (nutrition.waterTargetMl || 3000)) * 100)
   );
+
+  // Hydration Lab State (Scientific Adaptability - ACSM / EFSA)
+  const [ambientTempC, setAmbientTempC] = useState<number>(24);
+  const [trainingDurationMin, setTrainingDurationMin] = useState<number>(45);
+  const [sweatRateProfile, setSweatRateProfile] = useState<"LOW" | "MODERATE" | "HIGH" | "VERY_HIGH">("MODERATE");
+  const [takesCreatine, setTakesCreatine] = useState<boolean>(false);
+  const [showHydrationLab, setShowHydrationLab] = useState<boolean>(false);
+
+  // Dynamic scientific estimation for hydration
+  // Estimated user weight based on protein target or default 75kg
+  const estimatedUserWeightKg = nutrition.proteinTargetG > 0 ? Math.round(nutrition.proteinTargetG / 1.8) : 75;
+  const hydrationTargetData: HydrationEstimateResult = calculateHydrationTarget({
+    weightKg: estimatedUserWeightKg,
+    ambientTemperatureC: ambientTempC,
+    exerciseDurationMinutes: trainingDurationMin,
+    sweatRateCategory: sweatRateProfile,
+    useCreatine: takesCreatine,
+  });
+
+  const armstrongScale = getArmstrongScale();
 
   // Filter food catalog
   const filteredFoods = COMMON_FOOD_DATABASE.filter((food) => {
@@ -407,48 +435,255 @@ export const NutritionModule: React.FC<NutritionModuleProps> = ({
         </div>
       </div>
 
-      {/* Hydration Section (Monochromatic) */}
-      <div className="bg-black border border-zinc-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="w-10 h-10 border border-zinc-700 bg-zinc-900 flex items-center justify-center shrink-0">
-            <Droplets className="w-5 h-5 text-white" />
+      {/* Hydration Section (Scientific Adaptation - ACSM & EFSA) */}
+      <div className="bg-black border border-zinc-800 p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="w-10 h-10 border border-zinc-700 bg-zinc-900 flex items-center justify-center shrink-0">
+              <Droplets className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-zinc-400">INGESTÃO HÍDRICA HOJE:</span>
+                <span className="font-mono text-sm font-bold text-white">
+                  {nutrition.waterCurrentMl} ml / {hydrationTargetData.totalEstimatedRangeMl ? `Faixa Est. ${hydrationTargetData.totalEstimatedRangeMl.min} - ${hydrationTargetData.totalEstimatedRangeMl.max} ml` : `Meta ${nutrition.waterTargetMl || 2500} ml`} ({waterPercent}%)
+                </span>
+              </div>
+              <div className="w-48 sm:w-72 h-1.5 bg-zinc-900 border border-zinc-800 overflow-hidden mt-1.5">
+                <div
+                  className="h-full bg-white transition-all"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.round(
+                        (nutrition.waterCurrentMl /
+                          (hydrationTargetData.recommendedCenterMl || nutrition.waterTargetMl || 2500)) *
+                          100
+                      )
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-zinc-400">BALANÇO HÍDRICO:</span>
-              <span className="font-mono text-sm font-bold text-white">
-                {nutrition.waterCurrentMl} / {nutrition.waterTargetMl} ml ({waterPercent}%)
-              </span>
-            </div>
-            <div className="w-48 sm:w-64 h-1.5 bg-zinc-900 border border-zinc-800 overflow-hidden mt-1.5">
-              <div
-                className="h-full bg-white transition-all"
-                style={{ width: `${waterPercent}%` }}
-              />
-            </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end font-mono text-xs">
+            <button
+              onClick={() => onAddWater(250)}
+              className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors"
+            >
+              + 250ml
+            </button>
+            <button
+              onClick={() => onAddWater(500)}
+              className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors"
+            >
+              + 500ml
+            </button>
+            <button
+              onClick={() => onAddWater(1000)}
+              className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors"
+            >
+              + 1000ml
+            </button>
+            <button
+              onClick={() => setShowHydrationLab(!showHydrationLab)}
+              className="px-3 py-1.5 border border-zinc-700 bg-black hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors flex items-center gap-1"
+              title="Ajustar temperatura, suor, duração de treino e escala Armstrong"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-400" />
+              {showHydrationLab ? "OCULTAR LAB" : "CALC. FISIOLÓGICO"}
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end font-mono text-xs">
-          <button
-            onClick={() => onAddWater(250)}
-            className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors"
-          >
-            + 250ml
-          </button>
-          <button
-            onClick={() => onAddWater(500)}
-            className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors"
-          >
-            + 500ml
-          </button>
-          <button
-            onClick={() => onAddWater(1000)}
-            className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors"
-          >
-            + 1000ml
-          </button>
-        </div>
+        {/* Collapsible Scientific Hydration Laboratory (Requirement 18) */}
+        {showHydrationLab && (
+          <div className="pt-3 border-t border-zinc-900 space-y-4 font-mono text-xs animate-in fade-in duration-200">
+            <div className="bg-[#050505] p-3 border border-zinc-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-white font-bold text-xs uppercase flex items-center gap-1.5">
+                  <Thermometer className="w-3.5 h-3.5 text-zinc-400" />
+                  PARÂMETROS CONTEXTUAIS DO DIA (ACSM 2007)
+                </span>
+                <span className="text-[10px] text-zinc-400">
+                  Classificação: ESTIMATIVA INICIAL
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                {/* Temp */}
+                <div>
+                  <label className="text-zinc-400 block mb-1 text-[10px] uppercase">
+                    Temperatura Ambiente: {ambientTempC}°C
+                  </label>
+                  <div className="grid grid-cols-4 gap-1 text-[10px]">
+                    {[18, 24, 29, 34].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setAmbientTempC(t)}
+                        className={`p-1.5 border text-center ${
+                          ambientTempC === t
+                            ? "border-white bg-white text-black font-bold"
+                            : "border-zinc-800 bg-black text-zinc-400 hover:text-white"
+                        }`}
+                      >
+                        {t}°C
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Duration */}
+                <div>
+                  <label className="text-zinc-400 block mb-1 text-[10px] uppercase">
+                    Treino Hoje: {trainingDurationMin} min
+                  </label>
+                  <div className="grid grid-cols-4 gap-1 text-[10px]">
+                    {[0, 45, 75, 90].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setTrainingDurationMin(d)}
+                        className={`p-1.5 border text-center ${
+                          trainingDurationMin === d
+                            ? "border-white bg-white text-black font-bold"
+                            : "border-zinc-800 bg-black text-zinc-400 hover:text-white"
+                        }`}
+                      >
+                        {d === 0 ? "Desc." : `${d}m`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sweat rate */}
+                <div>
+                  <label className="text-zinc-400 block mb-1 text-[10px] uppercase">
+                    Sudorese Percebida
+                  </label>
+                  <select
+                    value={sweatRateProfile}
+                    onChange={(e) => setSweatRateProfile(e.target.value as any)}
+                    className="w-full bg-black border border-zinc-800 p-1.5 text-white outline-none text-[11px]"
+                  >
+                    <option value="LOW">Baixa (&lt;0.5 L/h)</option>
+                    <option value="MODERATE">Moderada (0.5 - 1.0 L/h)</option>
+                    <option value="HIGH">Intensa (1.0 - 1.5 L/h)</option>
+                    <option value="VERY_HIGH">Profusa (&gt;1.5 L/h)</option>
+                  </select>
+                </div>
+
+                {/* Creatine */}
+                <div>
+                  <label className="text-zinc-400 block mb-1 text-[10px] uppercase">
+                    Suplementa Creatina?
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setTakesCreatine(!takesCreatine)}
+                    className={`w-full p-1.5 border text-center transition-all ${
+                      takesCreatine
+                        ? "border-white bg-white text-black font-bold"
+                        : "border-zinc-800 bg-black text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    {takesCreatine ? "SIM (+350ml osmótico)" : "NÃO"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Breakdown Output */}
+              <div className="pt-2 border-t border-zinc-900 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div className="text-zinc-400">
+                  <span className="text-zinc-300 font-bold">{hydrationTargetData.categoryLabel}: </span>
+                  {hydrationTargetData.totalEstimatedRangeMl ? (
+                    <span className="text-white font-mono font-bold">
+                      {hydrationTargetData.totalEstimatedRangeMl.min} ml a {hydrationTargetData.totalEstimatedRangeMl.max} ml/dia
+                    </span>
+                  ) : (
+                    <span className="text-zinc-500 font-mono">Dados insuficientes</span>
+                  )}
+                  {hydrationTargetData.baselineRangeMl && (
+                    <span className="text-zinc-500 ml-2">
+                      (Basal: {hydrationTargetData.baselineRangeMl.min}-{hydrationTargetData.baselineRangeMl.max} ml)
+                    </span>
+                  )}
+                </div>
+                {hydrationTargetData.recommendedCenterMl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onUpdateNutritionGoals) {
+                        onUpdateNutritionGoals({
+                          caloriesTarget: nutrition.caloriesTarget,
+                          proteinTargetG: nutrition.proteinTargetG,
+                          carbsTargetG: nutrition.carbsTargetG,
+                          fatTargetG: nutrition.fatTargetG,
+                          waterTargetMl: hydrationTargetData.recommendedCenterMl!,
+                        });
+                      }
+                    }}
+                    className="px-2.5 py-1 border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-white font-mono text-[10px] uppercase"
+                  >
+                    Adotar Meta Média de {hydrationTargetData.recommendedCenterMl} ml
+                  </button>
+                )}
+              </div>
+
+              {/* Adjustments notes */}
+              {hydrationTargetData.adjustments.length > 0 && (
+                <div className="text-[10px] text-zinc-400 space-y-0.5">
+                  {hydrationTargetData.adjustments.map((adj, i) => (
+                    <div key={i} className="text-zinc-400">
+                      • <strong className="text-zinc-300">{adj.factor}:</strong> {adj.description} (+{adj.additionalMlMin}-{adj.additionalMlMax} ml)
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Armstrong Urine Scale Guide */}
+            <div className="bg-[#050505] p-3 border border-zinc-800 space-y-2">
+              <span className="text-white font-bold text-xs uppercase block">
+                ESCALA ARMSTRONG DE COLORAÇÃO URINÁRIA (Armstrong et al., 1994)
+              </span>
+              <p className="text-[10px] text-zinc-400">
+                A hidratação real é avaliada clinicamente pela cor da urina e sensação de sede, não apenas por volumes fixos.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 pt-1">
+                {armstrongScale.map((item) => {
+                  const colors: Record<number, string> = {
+                    1: "#fef9c3",
+                    2: "#fef08a",
+                    3: "#facc15",
+                    4: "#ca8a04",
+                    5: "#854d0e",
+                  };
+                  return (
+                    <div key={item.colorLevel} className="p-2 border border-zinc-800 bg-black flex items-center gap-2">
+                      <div
+                        className="w-4 h-4 rounded-full border border-zinc-700 shrink-0"
+                        style={{ backgroundColor: colors[item.colorLevel] || "#ca8a04" }}
+                      />
+                      <div className="text-[10px]">
+                        <div className="text-white font-bold">Nível {item.colorLevel}</div>
+                        <div className="text-zinc-400">{item.hydrationStatus}</div>
+                        <div className="text-zinc-500 text-[9px] truncate" title={item.action}>{item.action}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+              <Info className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <span>{hydrationTargetData.disclaimer}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Navigation Sub-Tabs */}
