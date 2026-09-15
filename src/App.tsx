@@ -33,6 +33,7 @@ import {
   purgeCurrentUserVault,
   purgeVaultData,
   generateVaultExport,
+  generateEncryptedVaultExport,
   logAuditEvent,
 } from "./utils/security";
 import {
@@ -464,6 +465,26 @@ export default function App() {
       goals,
       healthTimeline,
     });
+  };
+
+  // Encrypted Vault Export Handler (AES-GCM 256-bit + PBKDF2)
+  const handleExportEncryptedVault = async (passphrase: string) => {
+    await generateEncryptedVaultExport(
+      {
+        profile: userProfile,
+        security: securitySettings,
+        systemStatus,
+        bodyMetrics,
+        workouts,
+        cardioSessions,
+        nutrition,
+        sleep,
+        habits,
+        goals,
+        healthTimeline,
+      },
+      passphrase
+    );
   };
 
   // Onboarding Complete handler (legacy fallback)
@@ -1035,6 +1056,7 @@ export default function App() {
             authUser={authUser}
             bodyMetrics={bodyMetrics}
             dashboardConfig={dashboardConfig}
+            onOpenSecurityCenter={() => setIsSecurityCenterOpen(true)}
             onUpdateProfile={(updatedProfile) => {
               setUserProfile(updatedProfile);
               if (authUser) {
@@ -1056,7 +1078,6 @@ export default function App() {
                 setUserVaultItem(authUser.id, "dashboard_config", newConfig);
               }
             }}
-            onOpenSecurityCenter={() => setIsSecurityCenterOpen(true)}
           />
         );
 
@@ -1178,6 +1199,7 @@ export default function App() {
             saveSecuritySettings(newSec);
           }}
           onExportVault={handleExportVault}
+          onExportEncryptedVault={handleExportEncryptedVault}
           onPurgeVault={handlePurgeVault}
           onLockTerminalNow={() => {
             setIsSecurityCenterOpen(false);

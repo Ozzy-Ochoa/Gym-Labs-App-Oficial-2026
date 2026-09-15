@@ -9,6 +9,12 @@ import {
   LoginAuditLog,
   RegistrationFormData,
 } from "../types";
+import { generateTotpSecret, verifyTotpToken, generateOtpAuthUri } from "./totp";
+import { encryptVaultData, decryptVaultData, EncryptedVaultPayload } from "./vaultCrypto";
+
+export { generateTotpSecret, verifyTotpToken, generateOtpAuthUri };
+export { encryptVaultData, decryptVaultData };
+export type { EncryptedVaultPayload };
 
 // Key definitions for multi-tenant local vault
 export const AUTH_KEYS = {
@@ -378,6 +384,40 @@ export function setUserVaultItem<T>(userId: string, keyName: string, value: T): 
   }
 }
 
+// AES-GCM Encrypted Vault storage with hardware key derivation (PBKDF2 100k + 96-bit IV)
+export async function setEncryptedUserVaultItem<T>(
+  userId: string,
+  keyName: string,
+  value: T,
+  passphrase: string
+): Promise<void> {
+  try {
+    const encrypted = await encryptVaultData(value, passphrase);
+    const key = getUserVaultKey(userId, `${keyName}_enc`);
+    localStorage.setItem(key, JSON.stringify(encrypted));
+  } catch (err) {
+    console.error(`Failed to set encrypted user vault item ${keyName}`, err);
+  }
+}
+
+export async function getEncryptedUserVaultItem<T>(
+  userId: string,
+  keyName: string,
+  passphrase: string,
+  fallback: T
+): Promise<T> {
+  try {
+    const key = getUserVaultKey(userId, `${keyName}_enc`);
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const payload: EncryptedVaultPayload = JSON.parse(raw);
+    return await decryptVaultData<T>(payload, passphrase);
+  } catch (err) {
+    console.warn(`Could not decrypt vault item ${keyName}, using fallback`, err);
+    return fallback;
+  }
+}
+
 // Legacy profile / settings helpers mapped to active authenticated user
 export function getUserProfile(): UserProfile | null {
   const user = getAuthenticatedUser();
@@ -466,6 +506,33 @@ export function generateVaultExport(vaultData: Record<string, any>) {
   const a = document.createElement("a");
   a.href = url;
   a.download = `GYMLABS_EXPORT_${user?.handle || "DATA"}_${new Date().toISOString().split("T")[0]}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Encrypted export protected by user passphrase with AES-GCM 256-bit + PBKDF2
+export async function generateEncryptedVaultExport(
+  vaultData: Record<string, any>,
+  passphrase: string
+): Promise<void> {
+  const user = getAuthenticatedUser();
+  const encryptedPayload = await encryptVaultData(vaultData, passphrase);
+  const exportPackage = {
+    system: "Gym Labs // Health OS Enclave",
+    encryption: "AES-GCM-256 // PBKDF2-SHA256 (100k iter)",
+    operator: user ? user.handle : "ANONYMOUS_OPERATOR",
+    exportedAt: new Date().toISOString(),
+    vault: encryptedPayload,
+  };
+
+  const jsonStr = JSON.stringify(exportPackage, null, 2);
+  const blob = new Blob([jsonStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `GYMLABS_ENCRYPTED_VAULT_${user?.handle || "DATA"}_${new Date().toISOString().split("T")[0]}.glvault`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

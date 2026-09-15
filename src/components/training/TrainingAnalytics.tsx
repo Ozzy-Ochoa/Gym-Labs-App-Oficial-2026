@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { WorkoutSession } from "../../types";
+import { calculate1RM } from "../../domain/scientificEngine";
+import { ProvenanceBadge } from "../../domain/provenance";
 import {
   TrendingUp,
   Flame,
@@ -75,8 +77,8 @@ export const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ workouts }
             muscleSetsMap[matchedCategory]++;
           }
 
-          // 1RM estimation via Epley formula: weight * (1 + reps/30)
-          const epley1RM = Math.round(s.weightKg * (1 + s.reps / 30));
+          // 1RM estimation via scientificEngine (Epley equation)
+          const epley1RM = calculate1RM(s.weightKg, s.reps).estimated1RM;
           const currentPR = prMap[ex.name];
           if (!currentPR || epley1RM > currentPR.estimated1RM) {
             prMap[ex.name] = {
@@ -250,9 +252,12 @@ export const TrainingAnalytics: React.FC<TrainingAnalyticsProps> = ({ workouts }
       <div className="border border-zinc-800 bg-black p-4 sm:p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
           <div>
-            <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest block">
-              PROGRESSÃO DE CARGA // FÓRMULA DE EPLEY
-            </span>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest block">
+                PROGRESSÃO DE CARGA // FÓRMULA DE EPLEY
+              </span>
+              <ProvenanceBadge provenance="CALCULATED" formula="Epley: Peso × (1 + Reps/30)" />
+            </div>
             <h3 className="text-base font-hud font-bold text-white tracking-wider">
               QUADRO DE RECORDES & 1RM ESTIMADA
             </h3>

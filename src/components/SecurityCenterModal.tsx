@@ -37,6 +37,7 @@ interface SecurityCenterModalProps {
   authUser: AuthUser | null;
   onUpdateSecurity: (newSec: SecuritySettings) => void;
   onExportVault: () => void;
+  onExportEncryptedVault?: (passphrase: string) => Promise<void>;
   onPurgeVault: () => void;
   onLockTerminalNow: () => void;
   onLogout: () => void;
@@ -50,6 +51,7 @@ export const SecurityCenterModal: React.FC<SecurityCenterModalProps> = ({
   authUser,
   onUpdateSecurity,
   onExportVault,
+  onExportEncryptedVault,
   onPurgeVault,
   onLockTerminalNow,
   onLogout,
@@ -59,6 +61,12 @@ export const SecurityCenterModal: React.FC<SecurityCenterModalProps> = ({
   // PIN
   const [newPin, setNewPin] = useState("");
   const [pinSuccessMsg, setPinSuccessMsg] = useState(false);
+
+  // Encrypted Export Passphrase
+  const [showEncryptedExportModal, setShowEncryptedExportModal] = useState(false);
+  const [exportPassphrase, setExportPassphrase] = useState("");
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState(false);
 
   // Password Change
   const [currentPassword, setCurrentPassword] = useState("");
@@ -358,17 +366,34 @@ export const SecurityCenterModal: React.FC<SecurityCenterModalProps> = ({
                     <Download className="w-5 h-5 text-emerald-400 shrink-0" />
                     <div>
                       <span className="text-white font-hud font-bold block uppercase text-xs">
-                        EXPORTAR COFRE (ART. 18)
+                        EXPORTAR COFRE (ART. 18 JSON)
                       </span>
                       <span className="text-[10px] text-zinc-500 block">
-                        JSON completo com telemetria e chave de autenticidade.
+                        JSON legível com metadados para conformidade LGPD.
                       </span>
                     </div>
                   </button>
 
                   <button
+                    onClick={() => setShowEncryptedExportModal(true)}
+                    className="p-3 bg-black border border-zinc-800 hover:border-amber-400 flex items-center gap-2.5 text-left group"
+                  >
+                    <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
+                    <div>
+                      <span className="text-white font-hud font-bold block uppercase text-xs">
+                        EXPORTAR CRIPTOGRAFADO (AES-GCM)
+                      </span>
+                      <span className="text-[10px] text-zinc-500 block">
+                        Arquivo .glvault cifrado com PBKDF2 (100k iterações) e senha mestra.
+                      </span>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="pt-2">
+                  <button
                     onClick={() => setShowPurgeConfirm(true)}
-                    className="p-3 bg-black border border-zinc-800 hover:border-red-500 flex items-center gap-2.5 text-left group"
+                    className="w-full p-3 bg-black border border-zinc-800 hover:border-red-500 flex items-center gap-2.5 text-left group"
                   >
                     <Trash2 className="w-5 h-5 text-red-400 shrink-0" />
                     <div>
@@ -382,6 +407,72 @@ export const SecurityCenterModal: React.FC<SecurityCenterModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {showEncryptedExportModal && (
+                <div className="border-2 border-amber-500/80 bg-zinc-950 p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                    <div className="flex items-center gap-2 text-amber-400 font-hud font-bold text-xs uppercase">
+                      <Key className="w-4 h-4" />
+                      <span>EXPORTAÇÃO BLINDADA // AES-256-GCM + PBKDF2</span>
+                    </div>
+                    <button
+                      onClick={() => setShowEncryptedExportModal(false)}
+                      className="text-zinc-500 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 leading-relaxed">
+                    Defina uma senha de criptografia para proteger o arquivo exportado. Os dados serão cifrados no próprio navegador com AES-GCM 256-bit e chave derivada via PBKDF2 (100.000 iterações com salt criptográfico único).
+                  </p>
+                  <div className="space-y-2">
+                    <input
+                      type="password"
+                      value={exportPassphrase}
+                      onChange={(e) => setExportPassphrase(e.target.value)}
+                      placeholder="SENHA PARA CIFRAGEM DO COFRE"
+                      className="w-full bg-black border border-zinc-800 focus:border-amber-400 p-2 text-xs font-mono text-white outline-none"
+                    />
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button
+                        onClick={() => setShowEncryptedExportModal(false)}
+                        className="px-3 py-1.5 border border-zinc-700 bg-black text-xs font-hud uppercase text-zinc-300"
+                      >
+                        CANCELAR
+                      </button>
+                      <button
+                        disabled={exportPassphrase.length < 6 || exportLoading}
+                        onClick={async () => {
+                          if (!onExportEncryptedVault || exportPassphrase.length < 6) return;
+                          setExportLoading(true);
+                          try {
+                            await onExportEncryptedVault(exportPassphrase);
+                            setExportSuccess(true);
+                            setTimeout(() => {
+                              setExportSuccess(false);
+                              setShowEncryptedExportModal(false);
+                              setExportPassphrase("");
+                            }, 2000);
+                          } finally {
+                            setExportLoading(false);
+                          }
+                        }}
+                        className="px-4 py-1.5 bg-amber-400 disabled:opacity-40 hover:bg-amber-300 text-black text-xs font-hud font-bold uppercase flex items-center gap-1.5"
+                      >
+                        {exportSuccess ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5" /> EXPORTADO!
+                          </>
+                        ) : exportLoading ? (
+                          "CIFRANDO..."
+                        ) : (
+                          "CIFRAR & BAIXAR (.GLVAULT)"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {showPurgeConfirm && (
                 <div className="border-2 border-red-500/80 bg-red-950/40 p-4 space-y-3">

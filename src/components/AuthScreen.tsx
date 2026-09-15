@@ -41,6 +41,8 @@ import {
   setActiveSession,
   sanitizeInput,
   setUserVaultItem,
+  generateTotpSecret,
+  verifyTotpToken,
 } from "../utils/security";
 import { AuthUser, AuthSession, RegistrationFormData, UserProfile, SecuritySettings } from "../types";
 import { createInitialCleanBodyMetrics, cleanNutrition, cleanSleep } from "../data/emptyState";
@@ -312,9 +314,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   // ----------------------------------------------------
-  // 2FA VERIFICATION SUBMIT
+  // 2FA VERIFICATION SUBMIT (RFC 6238 TOTP AUTHENTICATOR VERIFICATION)
   // ----------------------------------------------------
-  const handleVerify2FA = (e: React.FormEvent) => {
+  const handleVerify2FA = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pendingUser) return;
     setLoginError("");
@@ -322,19 +324,51 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     if (useBackupKey) {
       const cleanKey = backupKeyInput.trim().toUpperCase();
       if (cleanKey === pendingUser.recoveryKey) {
+        logAuditEvent({
+          userId: pendingUser.id,
+          emailOrHandle: pendingUser.email,
+          status: "RECOVERY_USED",
+          reason: "LOGIN_RECOVERY_KEY_VERIFIED",
+        });
         finalizeLoginSuccess(pendingUser);
         return;
       } else {
-        setLoginError("Código de recuperação incorreto.");
+        logAuditEvent({
+          userId: pendingUser.id,
+          emailOrHandle: pendingUser.email,
+          status: "2FA_FAILED",
+          reason: "INVALID_RECOVERY_KEY",
+        });
+        setLoginError("Código de recuperação de emergência incorreto.");
         return;
       }
     }
 
     const cleanCode = twoFactorCode.replace(/\D/g, "");
     if (cleanCode.length !== 6) {
-      setLoginError("Insira o código de 6 dígitos.");
+      setLoginError("Insira o código TOTP de 6 dígitos.");
       return;
     }
+
+    // Verify cryptographic TOTP token with tolerance
+    const isValidTotp = await verifyTotpToken(pendingUser.twoFactorSecret, cleanCode);
+    if (!isValidTotp) {
+      logAuditEvent({
+        userId: pendingUser.id,
+        emailOrHandle: pendingUser.email,
+        status: "2FA_FAILED",
+        reason: "INVALID_RFC6238_TOTP_TOKEN",
+      });
+      setLoginError("Código de autenticação incorreto ou expirado. Verifique seu app autenticador.");
+      return;
+    }
+
+    logAuditEvent({
+      userId: pendingUser.id,
+      emailOrHandle: pendingUser.email,
+      status: "SUCCESS",
+      reason: "TOTP_2FA_VERIFIED",
+    });
 
     finalizeLoginSuccess(pendingUser);
   };
@@ -440,6 +474,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         activityLevel: regData.activityLevel,
       };
 
+      const totpSecret = generateTotpSecret(20);
+
       const securitySettings: SecuritySettings = {
         pinHash,
         hasPinSet: Boolean(regData.pin),
@@ -451,7 +487,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         consentTimestamp: new Date().toISOString(),
         vaultEncryptionEnabled: true,
         twoFactorEnabled: regData.enableTwoFactor,
-        twoFactorSecret: "GYMLABS_KEY_" + generateCryptographicSalt(8).toUpperCase(),
+        twoFactorSecret: totpSecret,
       };
 
       const newUser: AuthUser = {
@@ -464,7 +500,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         pinHash,
         recoveryKey: generatedRecoveryKey || generateRecoveryKey(),
         twoFactorEnabled: regData.enableTwoFactor,
-        twoFactorSecret: securitySettings.twoFactorSecret || "",
+        twoFactorSecret: totpSecret,
         createdAt: new Date().toISOString(),
         lastLoginAt: new Date().toISOString(),
         failedLoginAttempts: 0,

@@ -39,7 +39,6 @@ import {
   Clock,
   ArrowRight,
 } from "lucide-react";
-import { sampleCorrelations, sampleHealthTimeline } from "../data/mockData";
 
 export interface DataLabModuleProps {
   correlations?: DataCorrelation[];
@@ -105,13 +104,9 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
   const [newHealthProvider, setNewHealthProvider] = useState("");
   const [newHealthNotes, setNewHealthNotes] = useState("");
 
-  // Use passed correlations or fallback to rich sample correlations
-  const activeCorrelations =
-    correlations && correlations.length > 0 ? correlations : sampleCorrelations;
-
-  // Use passed health records or fallback to athletic reference sample
-  const activeHealthTimeline =
-    healthTimeline && healthTimeline.length > 0 ? healthTimeline : sampleHealthTimeline;
+  // Use real passed correlations and health records without fictitious mock data
+  const activeCorrelations = correlations || [];
+  const activeHealthTimeline = healthTimeline || [];
 
   // 1. Calculate ACWR (Acute to Chronic Workload Ratio)
   // Acute = Volume of workouts in last 7 days; Chronic = Average weekly volume over 28 days
@@ -617,47 +612,58 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
 
           {/* List of Cross-System Correlations */}
           <div className="space-y-3">
-            {activeCorrelations.map((corr) => (
-              <div
-                key={corr.id}
-                className="border-2 border-zinc-800 bg-black p-4 sm:p-5 space-y-3 hud-corners"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-900 pb-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-2 h-2 bg-white" />
-                    <h4 className="font-hud font-bold text-white text-base uppercase tracking-wide">
-                      {corr.title}
-                    </h4>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-white bg-zinc-900 px-2.5 py-1 border border-zinc-700">
-                      COEFICIENTE: r = {corr.coefficient > 0 ? `+${corr.coefficient}` : corr.coefficient}
-                    </span>
-                    <span className="text-[9px] font-mono text-zinc-400 border border-zinc-800 px-2 py-1 uppercase">
-                      {corr.tag === "HIGH_CONFIDENCE" ? "ALTA CONFIANÇA" : "OBSERVAÇÃO"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
-                  <div className="bg-zinc-950 p-2.5 border border-zinc-900">
-                    <span className="text-[10px] text-zinc-500 uppercase block">VARIÁVEL A (INPUT)</span>
-                    <span className="text-white font-bold">{corr.variableA}</span>
-                  </div>
-                  <div className="bg-zinc-950 p-2.5 border border-zinc-900">
-                    <span className="text-[10px] text-zinc-500 uppercase block">VARIÁVEL B (RESPOSTA)</span>
-                    <span className="text-white font-bold">{corr.variableB}</span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-300 flex items-start gap-2.5">
-                  <Sparkles className="w-4 h-4 text-white shrink-0 mt-0.5" />
-                  <p className="leading-relaxed">
-                    <strong>Descoberta Prática:</strong> {corr.insight}
-                  </p>
-                </div>
+            {activeCorrelations.length === 0 ? (
+              <div className="border border-zinc-800 bg-black p-8 text-center space-y-2">
+                <span className="text-xs text-zinc-500 font-mono block">
+                  [ DADOS INSUFICIENTES PARA REGRESSÃO ESTATÍSTICA ]
+                </span>
+                <p className="text-xs text-zinc-400 font-mono max-w-md mx-auto leading-relaxed">
+                  Para detectar correlações matemáticas (ex: sono × volume ou proteína × recuperação), registre no mínimo 7 dias consecutivos de treinos e métricas de saúde.
+                </p>
               </div>
-            ))}
+            ) : (
+              activeCorrelations.map((corr) => (
+                <div
+                  key={corr.id}
+                  className="border-2 border-zinc-800 bg-black p-4 sm:p-5 space-y-3 hud-corners"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-900 pb-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-2 h-2 bg-white" />
+                      <h4 className="font-hud font-bold text-white text-base uppercase tracking-wide">
+                        {corr.title}
+                      </h4>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-white bg-zinc-900 px-2.5 py-1 border border-zinc-700">
+                        COEFICIENTE: r = {corr.coefficient > 0 ? `+${corr.coefficient}` : corr.coefficient}
+                      </span>
+                      <span className="text-[9px] font-mono text-zinc-400 border border-zinc-800 px-2 py-1 uppercase">
+                        {corr.tag === "HIGH_CONFIDENCE" ? "ALTA CONFIANÇA" : "OBSERVAÇÃO"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
+                    <div className="bg-zinc-950 p-2.5 border border-zinc-900">
+                      <span className="text-[10px] text-zinc-500 uppercase block">VARIÁVEL A (INPUT)</span>
+                      <span className="text-white font-bold">{corr.variableA}</span>
+                    </div>
+                    <div className="bg-zinc-950 p-2.5 border border-zinc-900">
+                      <span className="text-[10px] text-zinc-500 uppercase block">VARIÁVEL B (RESPOSTA)</span>
+                      <span className="text-white font-bold">{corr.variableB}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-300 flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-white shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">
+                      <strong>Descoberta Prática:</strong> {corr.insight}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           {/* Interactive Impact Simulator */}
@@ -978,46 +984,57 @@ export const DataLabModule: React.FC<DataLabModuleProps> = ({
               </span>
             </div>
 
-            {activeHealthTimeline.map((rec) => (
-              <div
-                key={rec.id}
-                className="bg-black border-2 border-zinc-800 p-4 space-y-3 hud-corners"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-900 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-white bg-zinc-900 px-2 py-0.5 border border-zinc-800">
-                      {rec.date}
-                    </span>
-                    <span className="font-hud font-bold text-white text-sm sm:text-base tracking-wide uppercase">
-                      {rec.type}
-                    </span>
-                  </div>
-                  <span className="text-xs font-mono text-zinc-400">{rec.provider}</span>
-                </div>
-
-                <p className="text-xs font-mono text-zinc-300 leading-relaxed bg-zinc-950 p-3 border border-zinc-900">
-                  {rec.notes}
+            {activeHealthTimeline.length === 0 ? (
+              <div className="border border-zinc-800 bg-black p-8 text-center space-y-2">
+                <span className="text-xs text-zinc-500 font-mono block">
+                  [ NENHUM REGISTRO MÉDICO OU LAUDO ARQUIVADO ]
+                </span>
+                <p className="text-xs text-zinc-400 font-mono max-w-md mx-auto leading-relaxed">
+                  Utilize o botão '+ NOVO REGISTRO' para arquivar exames de sangue, ecocardiogramas ou laudos de bioimpedância de forma isolada.
                 </p>
-
-                {rec.biomarkers && rec.biomarkers.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-1 font-mono text-xs">
-                    {rec.biomarkers.map((b) => (
-                      <div key={b.name} className="bg-zinc-950 p-2.5 border border-zinc-800">
-                        <span className="text-[9px] font-hud uppercase text-zinc-500 block truncate">
-                          {b.name}
-                        </span>
-                        <span className="text-white font-bold text-sm block mt-0.5">
-                          {stealthMode ? "••••" : b.value}
-                        </span>
-                        <span className="text-[9px] text-zinc-400 block">
-                          Ref: {b.reference}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
-            ))}
+            ) : (
+              activeHealthTimeline.map((rec) => (
+                <div
+                  key={rec.id}
+                  className="bg-black border-2 border-zinc-800 p-4 space-y-3 hud-corners"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-900 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-white bg-zinc-900 px-2 py-0.5 border border-zinc-800">
+                        {rec.date}
+                      </span>
+                      <span className="font-hud font-bold text-white text-sm sm:text-base tracking-wide uppercase">
+                        {rec.type}
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono text-zinc-400">{rec.provider}</span>
+                  </div>
+
+                  <p className="text-xs font-mono text-zinc-300 leading-relaxed bg-zinc-950 p-3 border border-zinc-900">
+                    {rec.notes}
+                  </p>
+
+                  {rec.biomarkers && rec.biomarkers.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-1 font-mono text-xs">
+                      {rec.biomarkers.map((b) => (
+                        <div key={b.name} className="bg-zinc-950 p-2.5 border border-zinc-800">
+                          <span className="text-[9px] font-hud uppercase text-zinc-500 block truncate">
+                            {b.name}
+                          </span>
+                          <span className="text-white font-bold text-sm block mt-0.5">
+                            {stealthMode ? "••••" : b.value}
+                          </span>
+                          <span className="text-[9px] text-zinc-400 block">
+                            Ref: {b.reference}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

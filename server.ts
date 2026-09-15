@@ -77,22 +77,41 @@ app.post("/api/intelligence", async (req, res) => {
     }
 
     // High-precision deterministic analytical engine fallback
+    // Real-data analytical engine (deterministic calculations using the incoming telemetry)
     const qLower = (query || "").toLowerCase();
-    let fallbackAnswer = "";
+    let answer = "";
 
-    if (qLower.includes("sono") || qLower.includes("sleep") || qLower.includes("treino") || qLower.includes("treinamento")) {
-      fallbackAnswer = `**CORRELAÇÃO DETECTADA: SONO × VOLUME DE TREINO**\n\n- **Média de Sono (Últimos 30d):** 7h 14m (Consistência: 88%)\n- **Performance em Sessões com Sono > 7h30:** +9.4% no volume total sustentado e RPE médio 7.2.\n- **Performance em Sessões com Sono < 6h30:** Queda de 11.2% nas repetições em reserva (RIR) e RPE elevado (8.6).\n\n*Nota analítica:* Os dados indicam associação linear positiva entre duração do sono profundo (REM + N3) e capacidade de carga em exercícios multiarticulares. Correlação observada (r = 0.78). *Lembrete: Correlação não estabelece causalidade isolada.*`;
-    } else if (qLower.includes("peso") || qLower.includes("weight") || qLower.includes("medidas") || qLower.includes("evolu")) {
-      fallbackAnswer = `**ANÁLISE DE COMPOSIÇÃO CORPORAL & PESO**\n\n- **Tendência de Peso (90 Dias):** 81.4 kg → 78.2 kg (-3.2 kg líquido)\n- **Massa Muscular Estimada:** Preservada em 64.8 kg (+0.4 kg de recomposição)\n- **Percentual de Gordura:** 16.8% → 14.1% (-2.7%)\n- **Circunferência Abdominal:** 86.5 cm → 82.0 cm (-4.5 cm)\n\n*Ajuste Recomendado:* Manter ingestão proteica atual de 168g/dia (2.15g/kg de massa corporal) para sustentar a curva de recomposição corporal.`;
-    } else if (qLower.includes("mês") || qLower.includes("mes") || qLower.includes("último") || qLower.includes("month")) {
-      fallbackAnswer = `**RELATÓRIO EXECUTIVO // SETEMBRO 2026**\n\n- **Sessões Realizadas:** 18 treinos de força + 8 sessões de cardio (34.8 km)\n- **Volume Semanal Médio:** 42.600 kg\n- **Adesão Nutricional:** 86% dos dias com metas calóricas e proteicas atingidas\n- **System Status Score Médio:** 84/100 (Estável)\n\n*Destaque Positivo:* Progressão contínua de carga no Supino Reto (+5 kg PR) e Agachamento Livre.\n*Ponto de Atenção:* Variabilidade do horário de dormir nos finais de semana (+1h 45m de desvio padrão).`;
+    const workouts = Array.isArray(telemetry?.workouts) ? telemetry.workouts : [];
+    const sleep = telemetry?.sleep || {};
+    const nutrition = telemetry?.nutrition || {};
+    const body = telemetry?.bodyMetrics || {};
+    const profile = telemetry?.userProfile || {};
+
+    const workoutsCount = workouts.length;
+    const totalVolume = workouts.reduce((acc: number, w: any) => acc + (Number(w.totalVolumeKg) || 0), 0);
+    const avgSleep = sleep.durationHours ? `${sleep.durationHours}h` : "Sem registros recentes";
+    const hrvVal = sleep.hrvMs ? `${sleep.hrvMs} ms` : "Não informado";
+    const recoveryScore = sleep.recoveryScore !== undefined ? `${sleep.recoveryScore}/100` : "Não calculado";
+
+    if (qLower.includes("sono") || qLower.includes("sleep") || qLower.includes("recupera")) {
+      if (!sleep.durationHours && workoutsCount === 0) {
+        answer = `**ANÁLISE DE SONO & RECUPERAÇÃO // GL LABCORE**\n\n- **Status:** Dados insuficientes de sono no período ativo.\n- **Orientação:** Registre ao menos 3 noites de sono no módulo 'SAÚDE' para permitir o cruzamento de dados com seu volume de treino.\n\n*Nota analítica:* O sistema só emite correlações após acúmulo de dados biométricos reais.`;
+      } else {
+        answer = `**ANÁLISE DE SONO & RECUPERAÇÃO // GL LABCORE**\n\n- **Duração do Último Registro:** ${avgSleep}\n- **Variabilidade da Frequência Cardíaca (HRV):** ${hrvVal}\n- **Índice de Prontidão / Recuperação:** ${recoveryScore}\n- **Sessões de Treino Registradas:** ${workoutsCount} sessões (Volume acumulado: ${totalVolume.toLocaleString("pt-BR")} kg)\n\n*Diretriz Determinística:* Sessões de alta intensidade exigem prontidão adequada. Manter consistência de horários de dormir reduz a variabilidade do SNC (Sistema Nervoso Central).`;
+      }
+    } else if (qLower.includes("peso") || qLower.includes("weight") || qLower.includes("medidas") || qLower.includes("composição") || qLower.includes("gordura")) {
+      const weight = body.weightKg || profile.weightKg || "Não registrado";
+      const fat = body.bodyFatPercent ? `${body.bodyFatPercent}%` : "Aguardando bioimpedância ou dobras";
+      answer = `**ANÁLISE DE COMPOSIÇÃO CORPORAL & ANTROPOMETRIA**\n\n- **Peso Atual Registrado:** ${weight} kg\n- **Percentual de Gordura:** ${fat}\n- **Massa Magra Estimada:** ${body.leanMassKg ? `${body.leanMassKg} kg` : "Calculado após inserção de dados"}\n\n*Recomendação Científica:* Para avaliação precisa da composição corporal, utilize medições de dobras cutâneas (Jackson-Pollock) ou DEXA. Balanças de bioimpedância simples sofrem influência de hidratação.`;
+    } else if (qLower.includes("mês") || qLower.includes("mes") || qLower.includes("treino") || qLower.includes("volume")) {
+      answer = `**RELATÓRIO DE CARGA DE TREINO (DADOS REAIS)**\n\n- **Sessões Concluídas:** ${workoutsCount} sessões\n- **Volume Total Levantado:** ${totalVolume.toLocaleString("pt-BR")} kg\n- **Média de Volume por Treino:** ${workoutsCount > 0 ? Math.round(totalVolume / workoutsCount).toLocaleString("pt-BR") : 0} kg\n- **Ingestão Hídrica Registrada:** ${nutrition.waterCurrentMl || 0} ml (Meta: ${nutrition.waterTargetMl || 3000} ml)\n\n*Conclusão Técnica:* A progressão de sobrecarga deve priorizar técnica e proximidade da falha (RIR 1-3). Evite aumentos de volume superiores a 10% semanais para prevenção de tendinopatias.`;
     } else {
-      fallbackAnswer = `**DIAGNÓSTICO GL LABCORE**\n\n- **Status Geral do Sistema:** 84 / 100\n- **Consistência Recente:** 89% de adesão nos pilares Treino, Nutrição e Sono.\n- **Carga de Treinamento:** 18 sessões concluídas no ciclo atual com 12 novos Recordes Pessoais (PRs).\n- **Balanço Hídrico:** 3.1L/dia (Meta: 3.0L/dia atingida em 24 de 30 dias).\n\n*Diretriz:* O ecossistema demonstra estabilidade metabólica favorável. Para aprofundar um indicador específico, consulte os módulos DATA LAB ou BODY MODEL.`;
+      answer = `**DIAGNÓSTICO GL LABCORE // TELEMETRIA INTEGRADA**\n\n- **Usuário:** @${profile.handle || "operador"} (${profile.name || "Não identificado"})\n- **Sessões de Treino Ativas:** ${workoutsCount}\n- **Volume de Treinamento Acumulado:** ${totalVolume.toLocaleString("pt-BR")} kg\n- **Prontidão / Recuperação:** ${recoveryScore}\n- **Meta Calórica Diária:** ${nutrition.calorieTargetKcal || "Não definida"} kcal\n\n*Diretriz:* Faça perguntas específicas como 'Como está meu volume de treino?' ou 'Analise meu sono' para obter relatórios detalhados com base no seu histórico real.`;
     }
 
     return res.json({
       source: "gl-deterministic-core",
-      answer: fallbackAnswer,
+      answer,
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {

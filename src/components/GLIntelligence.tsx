@@ -8,14 +8,7 @@ interface GLIntelligenceProps {
 export const GLIntelligence: React.FC<GLIntelligenceProps> = ({ telemetryContext }) => {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState<{ query: string; answer: string; source: string; time: string }[]>([
-    {
-      query: "Existe alguma relação entre meu sono e meu treinamento?",
-      answer: `**CORRELAÇÃO DETECTADA: SONO × VOLUME DE TREINO**\n\n- **Média de Sono (Últimos 30d):** 7h 14m (Consistência: 88%)\n- **Performance em Sessões com Sono > 7h30:** +9.4% no volume total sustentado e RPE médio 7.2.\n- **Performance em Sessões com Sono < 6h30:** Queda de 11.2% nas repetições em reserva (RIR) e RPE elevado (8.6).\n\n*Nota analítica:* Os dados indicam associação linear positiva entre duração do sono profundo (REM + N3) e capacidade de carga em exercícios multiarticulares. Correlação observada (r = 0.78). *Lembrete: Correlação não estabelece causalidade isolada.*`,
-      source: "gl-core-engine",
-      time: "Hoje, 08:30",
-    },
-  ]);
+  const [history, setHistory] = useState<{ query: string; answer: string; source: string; time: string }[]>([]);
 
   const sampleChips = [
     "Como foi meu último mês?",
@@ -140,7 +133,20 @@ export const GLIntelligence: React.FC<GLIntelligenceProps> = ({ telemetryContext
 
       {/* Conversation / Intelligence Answers Feed */}
       <div className="space-y-4">
-        {history.map((item, idx) => (
+        {history.length === 0 ? (
+          <div className="bg-black border border-zinc-800 p-8 text-center space-y-2">
+            <div className="w-10 h-10 border border-zinc-800 bg-zinc-950 flex items-center justify-center mx-auto text-zinc-500">
+              <Bot className="w-5 h-5" />
+            </div>
+            <h3 className="font-mono text-sm font-bold text-white uppercase">
+              Nenhuma consulta recente realizada
+            </h3>
+            <p className="text-xs font-mono text-zinc-400 max-w-md mx-auto">
+              Digite uma pergunta sobre seus treinos, sono, recuperação ou composição corporal para cruzamento analítico de dados reais.
+            </p>
+          </div>
+        ) : (
+          history.map((item, idx) => (
           <div
             key={idx}
             className="bg-black border-2 border-zinc-800 p-4 space-y-3 hud-corners"
@@ -166,7 +172,7 @@ export const GLIntelligence: React.FC<GLIntelligenceProps> = ({ telemetryContext
               </div>
             )}
           </div>
-        ))}
+        )))}
       </div>
     </div>
   );

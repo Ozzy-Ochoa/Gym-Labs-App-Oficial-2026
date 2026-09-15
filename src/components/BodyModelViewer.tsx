@@ -2,6 +2,12 @@ import React, { useState, useMemo } from "react";
 import { BodyMetrics, BodyRegion, UserProfile } from "../types";
 import { Body3DCanvas } from "./Body3DCanvas";
 import {
+  calculateBMI,
+  calculateDeurenbergBodyFat,
+  calculateBodyComposition,
+} from "../domain/scientificEngine";
+import { ProvenanceBadge } from "../domain/provenance";
+import {
   RotateCw,
   TrendingDown,
   TrendingUp,
@@ -49,25 +55,22 @@ export const BodyModelViewer: React.FC<BodyModelViewerProps> = ({
 
   // Biometric estimation engine (when measurements are missing/unmeasured)
   const estimations = useMemo(() => {
-    const bmi = weight / Math.pow(height / 100, 2);
-    const bmiRounded = Math.round(bmi * 10) / 10;
+    const bmiResult = calculateBMI(weight, height);
+    const bmiRounded = bmiResult.value;
 
-    // Body fat via Deurenberg / Gallagher clinical formula
-    let calculatedFat =
-      gender === "male"
-        ? Math.round(((1.2 * bmi) + (0.23 * age) - 16.2) * 10) / 10
-        : Math.round(((1.2 * bmi) + (0.23 * age) - 5.4) * 10) / 10;
-    calculatedFat = Math.max(6, Math.min(50, calculatedFat));
+    // Body fat via Deurenberg clinical formula from scientificEngine
+    const deurenbergFat = calculateDeurenbergBodyFat(bmiRounded, age, gender).value;
 
-    const finalFat = bodyMetrics.bodyFatPercent > 0 ? bodyMetrics.bodyFatPercent : calculatedFat;
+    const finalFat = bodyMetrics.bodyFatPercent > 0 ? bodyMetrics.bodyFatPercent : deurenbergFat;
     const isFatEstimated = bodyMetrics.bodyFatPercent <= 0;
 
-    const leanMass = Math.round(weight * (1 - finalFat / 100) * 10) / 10;
-    const muscleMass = Math.round(leanMass * 0.73 * 10) / 10;
-    const visceralFat = Math.max(1, Math.min(15, Math.round((bmi - 18) * 0.8 + (age / 20))));
+    const comp = calculateBodyComposition(weight, finalFat);
+    const leanMass = comp.leanMassKg;
+    const muscleMass = comp.skeletalMuscleMassKg;
+    const visceralFat = Math.max(1, Math.min(15, Math.round((bmiRounded - 18) * 0.8 + (age / 20))));
 
     // Anthropometric circumference regressions (cm)
-    const bmiRatio = Math.max(0.7, Math.min(1.5, bmi / 22.5));
+    const bmiRatio = Math.max(0.7, Math.min(1.5, bmiRounded / 22.5));
     const estimatedCircumferences: Record<string, number> = {
       neck: gender === "male" ? Math.round(38 * Math.sqrt(bmiRatio)) : Math.round(34 * Math.sqrt(bmiRatio)),
       shoulders: Math.round(height * 0.65 * Math.pow(bmiRatio, 0.4)),
@@ -385,11 +388,10 @@ export const BodyModelViewer: React.FC<BodyModelViewerProps> = ({
             <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest block">
               CORPO & SILHUETA 3D // AVATAR DO OPERADOR
             </span>
-            {selectedRegion.isEstimated && (
-              <span className="px-1.5 py-0.2 text-[9px] font-mono border border-zinc-700 bg-zinc-900 text-zinc-300">
-                [AUTO-CALCULADO]
-              </span>
-            )}
+            <ProvenanceBadge
+              provenance={selectedRegion.isEstimated ? "CALCULATED" : "REAL"}
+              formula={selectedRegion.isEstimated ? "Regressão Antropométrica (IMC)" : undefined}
+            />
           </div>
           <h2 className="font-hud font-bold text-xl sm:text-2xl text-white tracking-wider flex items-center gap-2">
             MAPEAMENTO CORPORAL & BIOMETRIA
@@ -950,9 +952,15 @@ export const BodyModelViewer: React.FC<BodyModelViewerProps> = ({
           {/* Body Composition Indicators */}
           <div className="bg-black border border-zinc-800 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest block">
-                ESTIMATIVA DE COMPOSIÇÃO CORPORAL
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest block">
+                  ESTIMATIVA DE COMPOSIÇÃO CORPORAL
+                </span>
+                <ProvenanceBadge
+                  provenance={estimations.isFatEstimated ? "ESTIMATED" : "REAL"}
+                  formula={estimations.isFatEstimated ? "Fórmula de Deurenberg" : "Bioimpedância / Dobras"}
+                />
+              </div>
               <span className="text-[10px] font-mono text-zinc-500">
                 IMC: {estimations.bmi} kg/m²
               </span>
